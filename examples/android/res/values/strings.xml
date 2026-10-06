@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+    <string name="app_name" translatable="false">FreshMart Kiosk</string>
+
+    <!-- Big greeting on the idle/attract screen. max=28 -->
+    <string name="welcome_title">Welcome! Tap to start</string>
+
+    <!-- Shown under the greeting once a loyalty card is scanned -->
+    <string name="welcome_back">Welcome back, <xliff:g id="name">%1$s</xliff:g>!</string>
+
+    <!-- Primary button on the cart screen. max=14 -->
+    <string name="checkout">Checkout</string>
+
+    <!-- Cart summary line -->
+    <plurals name="cart_items">
+        <item quantity="one">%d item in your cart</item>
+        <item quantity="other">%d items in your cart</item>
+    </plurals>
+
+    <!-- Total price line; the value is already formatted with currency -->
+    <string name="cart_total">Total: %1$s</string>
+
+    <!-- Shown when the card reader declines -->
+    <string name="payment_declined">Your card was declined. Please try another card or ask a team member for help.</string>
+
+    <!-- Timeout warning on any screen -->
+    <plurals name="session_timeout">
+        <item quantity="one">Are you still there? Resetting in %d second.</item>
+        <item quantity="other">Are you still there? Resetting in %d seconds.</item>
+    </plurals>
+
+    <!-- Accessibility: description of the language button -->
+    <string name="change_language">Change language</string>
+
+    <string name="receipt_question">Would you like a printed receipt?</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+
+    <!-- Department names shown on the browse screen -->
+    <string-array name="departments">
+        <item>Produce</item>
+        <item>Bakery</item>
+        <item>Dairy &amp; Eggs</item>
+    </string-array>
+
+    <!-- Promo banner; value is the discount percentage -->
+    <string name="discount">Save %1$d%% today with \"FRESH\"</string>
+</resources>

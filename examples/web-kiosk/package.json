@@ -1,0 +1,8 @@
+{
+  "name": "@nativeloc/example-web-kiosk",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "vite" },
+  "dependencies": { "@nativeloc/sdk": "*" },
+  "devDependencies": { "vite": "^5.4.11" }
+}

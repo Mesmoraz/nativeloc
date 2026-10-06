@@ -1,0 +1,11 @@
+{
+  "name": "@nativeloc/cli",
+  "version": "0.1.0",
+  "description": "Push source strings and screenshots to NativeLoc; pull translations for bundled fallbacks",
+  "type": "module",
+  "bin": { "nativeloc": "bin/nativeloc.js" },
+  "dependencies": {
+    "@nativeloc/core": "*",
+    "tsx": "^4.19.2"
+  }
+}

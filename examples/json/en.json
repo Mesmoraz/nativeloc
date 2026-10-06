@@ -1,0 +1,11 @@
+{
+  "menu": {
+    "title": "Today's specials",
+    "price": "{price} each",
+    "items_left": "{count, plural, =0 {Sold out} one {Only # left} other {# left}}"
+  },
+  "footer": {
+    "message": "Thanks for shopping with {store}!",
+    "description": "Footer on the digital signage loop"
+  }
+}

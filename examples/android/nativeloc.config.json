@@ -1,0 +1,10 @@
+{
+  "server": "http://localhost:4600",
+  "projectId": 1,
+  "files": [
+    {
+      "path": "res/values/strings.xml",
+      "translations": "res/values-{locale}/strings.xml"
+    }
+  ]
+}

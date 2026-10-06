@@ -1,0 +1,31 @@
+# Messages for the FreshMart self-service scale (GTK app on Linux).
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+#. Header on the scale's main screen. max=24
+#: src/scale.c:42
+msgid "Place item on the scale"
+msgstr ""
+
+#. Weight readout
+#: src/scale.c:57
+#, c-format
+msgid "Weight: %s kg"
+msgstr ""
+
+#: src/scale.c:88
+#, c-format
+msgid "%d label printed"
+msgid_plural "%d labels printed"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Button that confirms the selected produce
+msgctxt "button"
+msgid "Print label"
+msgstr ""
+
+#, python-format
+msgid "Hello %(name)s, you saved %(amount)s"
+msgstr ""

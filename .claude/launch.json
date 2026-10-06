@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "nativeloc-api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "-w", "@nativeloc/server"],
+      "port": 4600
+    },
+    {
+      "name": "nativeloc-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "-w", "@nativeloc/web"],
+      "port": 5173
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+services:
+  nativeloc:
+    build: .
+    ports:
+      - "4600:4600"
+    volumes:
+      - nativeloc-data:/data
+    restart: unless-stopped
+
+volumes:
+  nativeloc-data:

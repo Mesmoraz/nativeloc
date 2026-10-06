@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FreshMart Kiosk demo</title>
+    <style>
+      body { margin: 0; font: 14px system-ui, sans-serif; background: #e9ece8; color: #1c2420; }
+      .wrap { max-width: 1320px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+      canvas { width: 100%; height: auto; border-radius: 14px; box-shadow: 0 8px 30px rgba(0,0,0,.15); background: #fff; }
+      .panel { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: #fff; padding: 10px 12px; border-radius: 10px; }
+      button, input, select { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid #ccd; background: #fff; }
+      button.primary { background: #0f766e; color: #fff; border-color: #0f766e; }
+      .muted { color: #667; }
+      #status { min-height: 1.4em; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="panel">
+        <b>Device simulator</b>
+        <span class="muted">Language:</span>
+        <span id="langs"></span>
+        <span class="muted">Screen:</span>
+        <select id="screen">
+          <option value="home">Home / cart</option>
+          <option value="payment">Payment</option>
+        </select>
+        <span class="muted" id="version"></span>
+      </div>
+      <canvas id="screen-canvas" width="1280" height="800"></canvas>
+      <div class="panel">
+        <b>Send this screen to NativeLoc</b>
+        <span class="muted">(dev builds only — gives localizers exact context)</span>
+        <input id="token" placeholder="push API token" size="28" />
+        <button class="primary" id="capture">📷 Capture &amp; upload</button>
+        <span id="status" class="muted"></span>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

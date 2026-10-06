@@ -233,3 +233,6 @@ button.chip:hover { filter: brightness(0.96); background: var(--chip); }
   .hide-sm { display: none !important; }
   .source-text { font-size: 1.15rem; }
 }
+
+.demo-accounts { border-top: 1px solid var(--border, #dde1dc); padding-top: 12px; gap: 8px; }
+.demo-accounts button { display: flex; justify-content: space-between; gap: 12px; text-align: left; }

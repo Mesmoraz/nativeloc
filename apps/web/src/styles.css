@@ -196,7 +196,10 @@ button.chip:hover { filter: brightness(0.96); background: var(--chip); }
 .form-block + .form-block { margin-top: 14px; }
 .form-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .form-head .cat { font-weight: 700; }
-.form-head .ref { color: var(--muted); font-size: 0.9rem; }
+.form-block .ref { color: var(--muted); font-size: 0.95rem; }
+.plural-intro { margin: 4px 0 14px; color: var(--muted); font-size: 0.92rem; line-height: 1.5; }
+.plural-intro code { background: var(--surface-2); padding: 0 5px; border-radius: 4px; }
+.num { font-weight: 700; color: var(--chip-ink); background: var(--chip); padding: 0 5px; border-radius: 5px; }
 .preview { font-size: 0.95rem; color: var(--muted); min-height: 1.5em; white-space: pre-wrap; }
 .meter { font-size: 0.82rem; color: var(--muted); text-align: right; }
 .meter.over { color: var(--error); font-weight: 600; }

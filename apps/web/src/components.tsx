@@ -18,13 +18,16 @@ const TOKEN_RE = /(\{[^{}]+\}|#)/g;
 /**
  * Render ICU-ish text with placeholders as chips. Labels come from the source's
  * placeholder list so `{arg1}` reads as "value 1" and `#` reads as "number".
+ * With `num`, `#` is shown as that example number instead, so plural forms read as real sentences.
  */
-export function ChipText({ text, placeholders, pound = false }: { text: string; placeholders: Placeholder[]; pound?: boolean }) {
+export function ChipText({ text, placeholders, pound = false, num, locale }: { text: string; placeholders: Placeholder[]; pound?: boolean; num?: number; locale?: string }) {
   const label = (tok: string) => placeholders.find((p) => p.token === tok)?.label ?? tok.replace(/^\{|\}$/g, '');
   const parts = text.split(TOKEN_RE);
   return (
     <>
       {parts.map((part, i) => {
+        if (part === '#' && pound && num !== undefined)
+          return <span key={i} className="num" title="this number changes">{num.toLocaleString(locale)}</span>;
         if (part === '#' && pound) return <span key={i} className="chip" title="the number">{label('#')}</span>;
         if (/^\{[^{}]+\}$/.test(part)) return <span key={i} className="chip" title={part}>{label(part)}</span>;
         return <Fragment key={i}>{part.replace(/''/g, "'")}</Fragment>;

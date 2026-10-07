@@ -1,4 +1,4 @@
-import { fromEditorModel, sourceFormFor, targetTemplate, validateTranslation, type EditorModel, type Issue } from '@nativeloc/core';
+import { fromEditorModel, pluralExamples, sourceFormFor, targetTemplate, validateTranslation, type EditorModel, type Issue } from '@nativeloc/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { TopBar, useSession } from '../App';
@@ -11,13 +11,34 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigat
 const MOD = isMac ? '⌘' : 'Ctrl';
 const ALT = isMac ? '⌥' : 'Alt';
 
-/** Gentle labels for CLDR plural categories, with example numbers. */
-function formLabel(cat: string, examples: number[] | undefined, locale: string): { title: string; hint: string } {
-  if (cat.startsWith('=')) return { title: `Exactly ${cat.slice(1)}`, hint: '' };
-  const ex = examples?.length ? examples.filter((n) => Number.isInteger(n)).slice(0, 3) : [];
-  const nums = ex.length ? `${ex.map((n) => n.toLocaleString(locale)).join(', ')}${cat === 'other' ? ', …' : ''}` : '';
-  return { title: cat === 'other' ? 'Other numbers' : `When the number is like ${nums}`, hint: cat === 'other' && nums ? `e.g. ${nums}` : cat };
+/**
+ * Plain-language heading for a CLDR plural category, plus one example number used to show
+ * the English reference and the live preview as real sentences.
+ */
+function formLabel(cat: string, examples: number[] | undefined, locale: string, only = false): { title: string; example: number } {
+  if (cat.startsWith('=')) return { title: `For exactly ${cat.slice(1)}`, example: Number(cat.slice(1)) };
+  if (only) return { title: 'For any number', example: 2 };
+  const all = examples ?? [];
+  const ints = all.filter((n) => Number.isInteger(n));
+  // Some languages (Russian, Polish) only use "other" for fractions.
+  const fractions = !ints.length && all.length > 0;
+  const ex = (fractions ? all : ints).slice(0, 3);
+  const list = ex.map((n) => n.toLocaleString(locale)).join(', ') + (ex.length === 3 ? ', …' : '');
+  // Show an everyday number in the examples: "1 item" rather than "0 item", "2 items" rather than "0 items".
+  const example = (cat === 'other' ? ex.find((n) => n >= 2) : ex.find((n) => n !== 0)) ?? ex[0] ?? 2;
+  if (fractions) return { title: `For fractions like ${list}`, example };
+  if (cat === 'other') return { title: ex.length ? `For all other numbers, like ${list}` : 'For all other numbers', example };
+  if (ex.length && ex.every((n) => n >= 1000)) return { title: `For large round numbers like ${list}`, example };
+  return { title: ex.length ? `For ${list}` : cat, example };
 }
+
+/** An example number for a source-language plural form (English: 1 for "one", 2 for "other"). */
+function sourceExample(cat: string, locale: string) {
+  return formLabel(cat, (pluralExamples(locale) as Record<string, number[]>)[cat], locale).example;
+}
+
+// Translation boxes hold another language; keep grammar extensions from flagging every word.
+const noGrammarly = { 'data-gramm': 'false', 'data-gramm_editor': 'false', 'data-enable-grammarly': 'false' };
 
 function isEmptyModel(m: EditorModel) {
   return m.kind === 'plural' ? Object.values(m.forms).every((f) => !f.trim()) : !m.text.trim();
@@ -276,7 +297,8 @@ export function Workspace() {
   }
 
   const srcModel = item.sourceModel;
-  const sourceName = languageName(meta?.project.sourceLocale ?? 'en');
+  const sourceLocale = meta?.project.sourceLocale ?? 'en';
+  const sourceName = languageName(sourceLocale);
 
   return (
     <>
@@ -337,10 +359,7 @@ export function Workspace() {
               <div className="stack" style={{ gap: 6, marginTop: 6 }}>
                 {Object.entries(srcModel.forms).map(([cat, f]) => (
                   <div key={cat} className="source-text" style={{ fontSize: '1.15rem' }}>
-                    <span className="badge" style={{ marginRight: 8 }}>
-                      {cat.startsWith('=') ? cat.slice(1) : cat === 'one' ? '1' : cat}
-                    </span>
-                    <ChipText text={f} placeholders={item.placeholders} pound />
+                    <ChipText text={f} placeholders={item.placeholders} pound num={sourceExample(cat, sourceLocale)} locale={sourceLocale} />
                   </div>
                 ))}
               </div>
@@ -368,18 +387,28 @@ export function Workspace() {
               </div>
             )}
 
+            {model.kind === 'plural' && (
+              <p className="plural-intro" dir="ltr">
+                {Object.keys(model.forms).length > 1
+                  ? `This sentence changes with the number, so ${languageName(locale)} needs ${Object.keys(model.forms).length} versions. Write each one the way it should read for the numbers shown.`
+                  : `In ${sourceName} this sentence changes with the number, but ${languageName(locale)} uses the same wording for any number, so write it once.`}{' '}
+                Put the number in with the <b>number</b> button above ({ALT}+1). It shows as <code>#</code> while you type.
+              </p>
+            )}
+
             {model.kind === 'plural' ? (
               Object.keys(model.forms).map((cat, i) => {
-                const lab = formLabel(cat, item.pluralExamples[cat], locale);
+                const lab = formLabel(cat, item.pluralExamples[cat], locale, Object.keys(model.forms).length === 1);
                 return (
                   <div className="form-block" key={cat}>
                     <div className="form-head" dir="ltr">
                       <span className="cat">{lab.title}</span>
-                      <span className="ref">
-                        ↳ <ChipText text={sourceFormFor(srcModel, cat)} placeholders={item.placeholders} pound />
-                      </span>
+                    </div>
+                    <div className="ref" dir="ltr">
+                      {sourceName}: <ChipText text={sourceFormFor(srcModel, cat)} placeholders={item.placeholders} pound num={lab.example} locale={sourceLocale} />
                     </div>
                     <textarea
+                      {...noGrammarly}
                       ref={i === 0 ? firstInput : undefined}
                       rows={2}
                       value={model.forms[cat]}
@@ -387,7 +416,17 @@ export function Workspace() {
                       onChange={(e) => setModel({ ...model, forms: { ...model.forms, [cat]: e.target.value } })}
                       aria-label={lab.title}
                     />
-                    <LengthMeter text={model.forms[cat]} max={item.maxLength} />
+                    <div className="row" style={{ justifyContent: 'space-between' }}>
+                      <div className="preview" dir={dir}>
+                        {model.forms[cat].trim() && (
+                          <>
+                            <span dir="ltr">Will show: </span>
+                            <ChipText text={model.forms[cat]} placeholders={item.placeholders} pound num={lab.example} locale={locale} />
+                          </>
+                        )}
+                      </div>
+                      <LengthMeter text={model.forms[cat]} max={item.maxLength} />
+                    </div>
                   </div>
                 );
               })
@@ -399,6 +438,7 @@ export function Workspace() {
                   </div>
                 )}
                 <textarea
+                  {...noGrammarly}
                   ref={firstInput}
                   rows={3}
                   value={model.text}
@@ -415,7 +455,7 @@ export function Workspace() {
 
             {isEmptyModel(model) && (
               <button className="ghost small" style={{ marginTop: 6 }} onClick={() => setModel(item.template.kind === 'plural' ? { ...item.template, forms: Object.fromEntries(Object.keys(item.template.forms).map((c) => [c, sourceFormFor(srcModel, c)])) } : { ...item.template, text: srcModel.kind === 'plural' ? '' : srcModel.text })}>
-                Start from the original text
+                {model.kind === 'plural' ? `Copy the ${sourceName} into the boxes to edit` : `Copy the ${sourceName} text to edit`}
               </button>
             )}
 

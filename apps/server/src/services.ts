@@ -328,7 +328,8 @@ export function manifest(db: DB, project: ProjectRow): BundleManifest | null {
     sourceLocale: project.source_locale,
     publishedAt: rows[0] ? new Date(rows[0].created_at + 'Z').toISOString() : new Date().toISOString(),
     locales: Object.fromEntries(
-      rows.map((r) => [r.locale, { sha256: r.sha256, url: `/b/${project.bundle_token}/${r.locale}.json`, completeness: Math.round(r.completeness * 1000) / 1000 }]),
+      // The content hash in the URL keeps HTTP caches from serving an older bundle under a newer manifest.
+      rows.map((r) => [r.locale, { sha256: r.sha256, url: `/b/${project.bundle_token}/${r.locale}.json?h=${r.sha256.slice(0, 16)}`, completeness: Math.round(r.completeness * 1000) / 1000 }]),
     ),
   };
 }

@@ -5,6 +5,9 @@
 import os
 import sys
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")  # Windows consoles default to a legacy code page
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "sdks", "python"))
 from nativeloc import NativeLoc  # noqa: E402
 

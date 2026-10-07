@@ -11,8 +11,11 @@
   ],
   "scripts": {
     "dev": "concurrently -n server,web -c blue,magenta \"npm run dev -w @nativeloc/server\" \"npm run dev -w @nativeloc/web\"",
+    "demo": "npm run seed && concurrently -n server,web,kiosk -c blue,magenta,green \"npm run dev -w @nativeloc/server\" \"npm run dev -w @nativeloc/web\" \"npm run dev -w @nativeloc/example-web-kiosk\"",
+    "demo:reset": "npm run seed:reset && npm run demo",
     "start": "npm run build -w @nativeloc/web && npm run start -w @nativeloc/server",
     "seed": "npm run seed -w @nativeloc/server",
+    "seed:reset": "npm run seed:reset -w @nativeloc/server",
     "test": "vitest run",
     "typecheck": "tsc -p packages/core && tsc -p apps/server && tsc -p apps/web && tsc -p packages/cli && tsc -p sdks/js"
   },

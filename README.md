@@ -50,27 +50,77 @@ GET /b/{bundleToken}/es.json         → { "checkout": "Pagar", "cart_items": "{
 Untranslated keys fall back to the source text inside each bundle, so a device that downloads
 one file always has every string.
 
-## Quick start
+## Run the demo
 
-Requires Node 22.5+ (it uses the built-in `node:sqlite`).
+You need **Node 22.5 or newer** (`node -v`), because the server uses the built-in `node:sqlite`.
 
 ```bash
 npm install
-npm run seed      # demo org, users, 3 projects (Android kiosk, Linux scale, web signage)
-npm run dev       # API on :4600, web app on :5173
+npm run demo
 ```
 
-Open http://localhost:5173. The demo accounts and the demo CLI token are listed at the top of
-[apps/server/src/seed.ts](apps/server/src/seed.ts). Sign in as the Spanish localizer to see the
-translator experience, or as the admin to manage projects.
+That one command seeds the demo data the first time you run it and starts three things:
 
-**See it on a "device":** `npm run dev -w @nativeloc/example-web-kiosk` opens a simulated
-self-checkout screen on :5174. It renders through the JS SDK, picks up new versions within 15s
-of publishing, and its **Capture & upload** button sends its own screen with exact text
-positions, so localizers see each string highlighted in context.
+| What | URL | What it is |
+|---|---|---|
+| Web app | http://localhost:5173 | Where translators work and admins manage projects |
+| Kiosk simulator | http://localhost:5174 | A pretend store kiosk, standing in for a device in the field |
+| API server | http://localhost:4600 | Used by both of the above |
 
-Production: `docker compose up --build` (one container; data in a volume), or
-`npm start` (builds the web app and serves it from the API server on :4600).
+### Try the full loop (about 2 minutes)
+
+1. **See the device.** Open the kiosk at http://localhost:5174 and press **ES**. Some text is
+   already in Spanish. The rest is still English because nobody has translated it yet.
+2. **Give translators context.** On the kiosk, press **📷 Capture & upload**. The demo token is
+   already filled in. This uploads a screenshot of the kiosk screen showing where each string appears.
+3. **Translate.** Open http://localhost:5173 and pick **Lucas** under *Demo: sign in as…*.
+   Under *FreshMart Kiosk · Español*, press **Start translating**. Each string comes with the
+   screenshot from step 2, with that string highlighted. Type a translation and press
+   **Save & next** (`Ctrl+Enter`). `Alt+1` inserts a placeholder such as the customer's name.
+   Do a few.
+4. **Approve.** New translations wait for review, even ones from a reviewer. Go back to the
+   start page, press **Review** on the same card, and press **Approve & next** for each one.
+5. **Publish.** Sign out, pick **Avery (admin)**, open *FreshMart Kiosk*, and press
+   **Publish version 2** on the Overview tab.
+6. **Watch it update.** Go back to the kiosk. Within 15 seconds it downloads the new version
+   (the label next to the language buttons shows `bundle v2 · es`) and shows your translations.
+   It doesn't need a reload. A publish with no text changes leaves the screen as it is.
+
+To see the plain translator view, sign in as **María**. She can translate but not approve, so
+Lucas approves her work under **Review**. Sign in as **Yuki** to see
+Japanese.
+
+### Demo accounts
+
+| Name | Email | Password | Role |
+|---|---|---|---|
+| Avery | admin@demo.test | demo-admin-pass | Admin (everything) |
+| Lucas | lucas@demo.test | demo-reviewer-pass | Reviewer, Spanish and French |
+| María | maria@demo.test | demo-localizer-pass | Localizer, Spanish |
+| Yuki | yuki@demo.test | demo-localizer-pass | Localizer, Japanese |
+
+Push token for the CLI and kiosk capture: `nl_demo_kiosk_push_token`.
+
+### Other demos
+
+- **Linux scale (Python SDK):** with `npm run demo` running, run
+  `python examples/linux-demo/scale_demo.py es` (or `node --import tsx examples/linux-demo/scale_demo.mjs es` for the JS SDK).
+- **CLI push:** `NATIVELOC_TOKEN=nl_demo_kiosk_push_token npx nativeloc push` from `examples/android`.
+
+### Start over
+
+```bash
+npm run demo:reset
+```
+
+This deletes `data/` and seeds fresh demo data. Stop any running servers first, because Windows
+won't delete the database while it's open. `npm run seed:reset` does the same thing without
+starting the servers.
+
+### Production
+
+`docker compose up --build` (one container, data kept in a volume), or `npm start` (builds the
+web app and serves it from the API server on :4600).
 
 ## The localizer experience
 
@@ -158,7 +208,7 @@ examples/         sample strings.xml / .pot / JSON, web kiosk simulator, Linux d
 ```bash
 npm test          # core adapters, validation, server end-to-end, JS SDK
 npm run typecheck
-python -m unittest sdks/python/test_nativeloc.py
+python -m unittest discover -s sdks/python
 ```
 
 Roles: **admin** (everything), **reviewer** (translate + approve, assigned languages),

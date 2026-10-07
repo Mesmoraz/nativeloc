@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { actorOf, HttpError, projectAccess, randomToken, requireUser, sha256 } from '../auth.js';
 import { all, get, run, tx, type DB, type KeyRow, type ProjectRow } from '../db.js';
 import { exportFile, importFile, manifest, progress, projectLocales, publish, reviewable, upsertEntries } from '../services.js';
+import { tierOf, type Tier } from '../trust.js';
 import { checkLocale, imageSize, intParam, readMultipart } from '../util.js';
 
 export interface ProjectDeps {
@@ -22,7 +23,7 @@ function projectJson(db: DB, p: ProjectRow) {
     peerApprovals: p.peer_approvals,
     version: p.version,
     bundleToken: p.bundle_token,
-    progress: progress(db, p.id) as (ReturnType<typeof progress>[number] & { reviewable?: number })[],
+    progress: progress(db, p.id) as (ReturnType<typeof progress>[number] & { reviewable?: number; tier?: Tier })[],
   };
 }
 
@@ -46,7 +47,9 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
     // Localizers only see the languages they work on, and how much of it they can review.
     if (user.role !== 'admin') {
       projects.forEach((p, i) => {
-        p.progress = p.progress.filter((r) => locales.includes(r.locale)).map((r) => ({ ...r, reviewable: reviewable(db, rows[i], r.locale, user) }));
+        p.progress = p.progress
+          .filter((r) => locales.includes(r.locale))
+          .map((r) => ({ ...r, reviewable: reviewable(db, rows[i], r.locale, user), tier: tierOf(db, user, r.locale) }));
       });
       return { projects: projects.filter((p) => p.progress.length) };
     }

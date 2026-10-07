@@ -29,7 +29,11 @@ export interface User {
   name: string;
   role: 'admin' | 'reviewer' | 'localizer';
   locales: string[];
+  /** Trust per language: 'new' volunteers translate; 'trusted' approvals count; a 'lead' approval is final. */
+  tiers: Record<string, Tier>;
 }
+
+export type Tier = 'new' | 'trusted' | 'lead';
 
 export interface Project {
   id: number;

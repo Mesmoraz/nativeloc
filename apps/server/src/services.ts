@@ -14,6 +14,7 @@ import {
 } from '@nativeloc/core';
 import { HttpError } from './auth.js';
 import { all, get, run, tx, type DB, type KeyRow, type ProjectRow, type TranslationRow, type UserRow } from './db.js';
+import { tierOf } from './trust.js';
 
 export function projectLocales(db: DB, projectId: number): string[] {
   return all<{ locale: string }>(db, 'SELECT locale FROM project_locales WHERE project_id = ? ORDER BY locale', projectId).map((r) => r.locale);
@@ -201,11 +202,14 @@ export function screenshotContext(db: DB, keyId: number) {
 
 /** Peer reviewers never see their own work, or work they already approved. */
 const PEER_FILTER = 'AND t.updated_by IS NOT ? AND NOT EXISTS (SELECT 1 FROM votes v WHERE v.key_id = t.key_id AND v.locale = t.locale AND v.user_id = ?)';
-const isPeer = (project: ProjectRow, user?: UserRow) => !!user && user.role === 'localizer' && project.peer_approvals > 0;
+/** A peer reviewer: a localizer on a peer-review project whose approval is one vote (leads approve outright). */
+const isPeer = (db: DB, project: ProjectRow, locale: string, user?: UserRow) =>
+  !!user && user.role === 'localizer' && project.peer_approvals > 0 && tierOf(db, user, locale) !== 'lead';
 
 /** Translations in review that `user` can act on (for peers: not their own, not yet approved by them). */
 export function reviewable(db: DB, project: ProjectRow, locale: string, user: UserRow): number {
-  const peer = isPeer(project, user);
+  if (user.role === 'localizer' && tierOf(db, user, locale) === 'new') return 0;
+  const peer = isPeer(db, project, locale, user);
   return get<{ n: number }>(
     db,
     `SELECT COUNT(*) AS n FROM translations t JOIN keys k ON k.id = t.key_id
@@ -223,7 +227,7 @@ export function queue(
 ) {
   const limit = Math.min(opts.limit ?? 20, 50);
   const exclude = (opts.exclude ?? []).filter(Number.isFinite);
-  const peer = mode === 'review' && isPeer(project, opts.viewer);
+  const peer = mode === 'review' && isPeer(db, project, locale, opts.viewer);
   const statusFilter = mode === 'review' ? `t.status = 'review' ${peer ? PEER_FILTER : ''}` : "(t.status IS NULL OR t.status = 'outdated')";
   // Keys that share a screen come together, so localizers stay in one visual context.
   const keys = all<KeyRow & { t_text: string | null; t_status: TranslationRow['status'] | null }>(
@@ -289,7 +293,7 @@ export function saveTranslation(db: DB, project: ProjectRow, user: UserRow, keyI
   if (!key) throw new HttpError(404, 'String not found.');
   const issues: Issue[] = validateTranslation(key.source, text, { locale, maxLength: key.max_length });
   if (issues.some((i) => i.level === 'error')) throw new HttpError(422, issues.find((i) => i.level === 'error')!.message, { issues });
-  const canApprove = user.role !== 'localizer';
+  const canApprove = user.role !== 'localizer' || tierOf(db, user, locale) === 'lead';
   const status = (approve && canApprove) || !project.require_review ? 'approved' : 'review';
   run(
     db,
@@ -306,13 +310,13 @@ const approvalCount = (db: DB, keyId: number, locale: string) =>
   get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM votes WHERE key_id = ? AND locale = ?', keyId, locale)!.n;
 
 /**
- * Reviewers and admins approve outright. With peer review on, a localizer's approval is one vote;
+ * Reviewers, admins and leads approve outright. With peer review on, a trusted localizer's approval is one vote;
  * the translation is approved once `peer_approvals` people other than its author have approved it.
  */
 export function approveTranslation(db: DB, project: ProjectRow, user: UserRow, keyId: number, locale: string) {
   const t = get<TranslationRow>(db, 'SELECT * FROM translations WHERE key_id = ? AND locale = ?', keyId, locale);
   if (!t) throw new HttpError(404, 'Nothing to approve yet.');
-  if (!isPeer(project, user)) {
+  if (!isPeer(db, project, locale, user)) {
     run(db, "UPDATE translations SET status = 'approved', updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE key_id = ? AND locale = ?", user.id, keyId, locale);
     run(db, 'DELETE FROM votes WHERE key_id = ? AND locale = ?', keyId, locale);
     return { status: 'approved' as const };

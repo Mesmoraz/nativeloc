@@ -9,6 +9,7 @@ import { openDb, type DB } from './db.js';
 import { authRoutes } from './routes/auth.js';
 import { bundleRoutes } from './routes/bundles.js';
 import { localizeRoutes } from './routes/localize.js';
+import { placementRoutes } from './routes/placement.js';
 import { projectRoutes } from './routes/projects.js';
 
 export interface AppOptions {
@@ -39,6 +40,7 @@ export async function buildApp(opts: AppOptions) {
   authRoutes(app, db);
   projectRoutes(app, { db, screenshotDir });
   localizeRoutes(app, db);
+  placementRoutes(app, db);
   bundleRoutes(app, db);
 
   if (opts.webDist && existsSync(opts.webDist)) {

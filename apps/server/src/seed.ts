@@ -60,6 +60,27 @@ importFile(db, signage, example('json/en.json'), 'json', {});
 run(db, "INSERT INTO join_links (code, org_id, locales) VALUES ('demo-volunteers', ?, ?)", orgId, JSON.stringify(['es', 'fr']));
 run(db, 'UPDATE projects SET peer_approvals = 2 WHERE id = ?', kiosk.id);
 
+// Spanish placement check. Volunteers from the sign-up link take it before their reviews count.
+const placement = (kind: 'translate' | 'review', source: string, text: string, problem?: string) =>
+  run(
+    db,
+    "INSERT INTO placement_items (org_id, locale, kind, source, reference, candidate, has_error, error_note) VALUES (?, 'es', ?, ?, ?, ?, ?, ?)",
+    orgId, kind, source, kind === 'translate' ? text : null, kind === 'review' ? text : null, problem ? 1 : 0, problem ?? null,
+  );
+placement('translate', 'The food bank is open Monday through Friday, 9 AM to 5 PM.', 'El banco de alimentos está abierto de lunes a viernes, de 9 a. m. a 5 p. m.');
+placement('translate', 'No ID is required to get food.', 'No se necesita identificación para recibir alimentos.');
+placement('translate', 'Please bring your own bags if you can.', 'Si puede, traiga sus propias bolsas.');
+placement('translate', 'Call us if you need a home delivery.', 'Llámenos si necesita entrega a domicilio.');
+placement('translate', 'Anyone under 18 eats free all summer.', 'Los menores de 18 años comen gratis durante todo el verano.');
+placement('review', 'We are closed on Thanksgiving Day.', 'Estamos cerrados el Día de Acción de Gracias.');
+placement('review', 'You can visit once a week.', 'Puede venir una vez al mes.', '“week” became “month”');
+placement('review', 'Do not share your account password.', 'Comparta la contraseña de su cuenta.', 'the “not” was dropped');
+placement('review', 'Free groceries for anyone who needs them.', 'Alimentos gratis para cualquier persona que los necesite.');
+placement('review', 'Appointments are available until 4 PM.', 'Hay citas disponibles hasta las 4 p. m.');
+placement('review', 'Pick up your order at the side door.', 'Recoja su pedido en la puerta principal.', '“side door” became “main door”');
+placement('review', 'Fresh produce arrives every Tuesday.', 'Las frutas y verduras frescas llegan todos los martes.');
+placement('review', 'Applications must be received by March 1.', 'Las solicitudes deben recibirse antes del 1 de mayo.', '“March” became “May”');
+
 run(db, 'INSERT INTO api_tokens (project_id, name, token_hash, scopes) VALUES (?, ?, ?, ?)', kiosk.id, 'demo CLI', sha256('nl_demo_kiosk_push_token'), JSON.stringify(['push']));
 
 // Approved translations for part of the kiosk, so the device simulator visibly changes language

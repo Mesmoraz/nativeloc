@@ -1,6 +1,7 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { get, run, type DB, type ProjectRow, type UserRow } from './db.js';
+import { tierOf } from './trust.js';
 
 export class HttpError extends Error {
   constructor(
@@ -92,7 +93,10 @@ export function projectAccess(db: DB, req: FastifyRequest, projectId: number, ac
     push: [],
   };
   // With peer review on, localizers review each other's work (approvals are counted, see approveTranslation).
-  const peer = access === 'review' && user.role === 'localizer' && project.peer_approvals > 0;
+  // A lead in the language reviews like a reviewer. New volunteers review after passing the placement check.
+  const tier = user.role === 'localizer' && locale ? tierOf(db, user, locale) : null;
+  const peer = access === 'review' && user.role === 'localizer' && (tier === 'lead' || (project.peer_approvals > 0 && tier === 'trusted'));
+  if (access === 'review' && tier === 'new') throw new HttpError(403, 'Pass the placement check for this language to start reviewing.');
   if (!needs[access].includes(user.role) && !peer) throw new HttpError(403, 'You do not have permission to do that.');
   if (locale && (access === 'translate' || access === 'review') && !actor.locales.includes(locale)) {
     throw new HttpError(403, `You are not assigned to ${locale}.`);

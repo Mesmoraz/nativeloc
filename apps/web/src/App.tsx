@@ -4,9 +4,11 @@ import { ProjectAdmin } from './admin/ProjectAdmin';
 import { api, type User } from './api';
 import { Workspace } from './localizer/Workspace';
 import { Home } from './pages/Home';
+import { Grading } from './pages/Grading';
 import { Invite } from './pages/Invite';
 import { Join } from './pages/Join';
 import { Login } from './pages/Login';
+import { Placement } from './pages/Placement';
 
 interface Session {
   user: User;
@@ -75,6 +77,8 @@ export function App() {
           <>
             <Route path="/" element={<Home />} />
             <Route path="/p/:projectId/:locale/:mode" element={<Workspace />} />
+            <Route path="/placement/:locale" element={<Placement />} />
+            <Route path="/grading" element={<Grading />} />
             <Route path="/p/:projectId" element={session.user.role === 'admin' ? <ProjectAdmin /> : <Navigate to="/" />} />
             <Route path="*" element={<Navigate to="/" />} />
           </>

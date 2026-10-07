@@ -27,6 +27,29 @@ export function Home() {
   );
 }
 
+/** Placement checks waiting for this reviewer or lead to grade. */
+function GradingBanner() {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    api<{ attempts: unknown[] }>('/api/v1/placement-grading').then((r) => setN(r.attempts.length), () => setN(0));
+  }, []);
+  if (!n) return null;
+  return (
+    <div className="card row">
+      <div>
+        <b>
+          {n} placement check{n === 1 ? '' : 's'} to grade
+        </b>
+        <div className="small muted">New volunteers can review once someone experienced checks their translations.</div>
+      </div>
+      <span className="spacer" />
+      <Link className="btn primary" to="/grading">
+        Grade
+      </Link>
+    </div>
+  );
+}
+
 function LocalizerHome({ projects }: { projects: Project[] }) {
   const { session } = useSession();
   const isReviewer = session!.user.role === 'reviewer';
@@ -41,12 +64,14 @@ function LocalizerHome({ projects }: { projects: Project[] }) {
           Pick up where you left off. Strings are shown one at a time with a picture of where they appear.
         </p>
       </div>
+      <GradingBanner />
       {!work.length && <div className="card muted">Nothing is assigned to you yet. Your admin will add you to a language, or open a volunteer sign-up link to pick one.</div>}
       <div className="grid-cards">
         {work.map(({ project, pr }) => {
           const toTranslate = pr.todo + pr.outdated;
-          // Reviewers review everything; with peer review on, localizers review each other's work.
-          const canReview = isReviewer || project.peerApprovals > 0;
+          // Reviewers and leads review everything; with peer review on, trusted localizers review each other's work.
+          const canReview = isReviewer || pr.tier === 'lead' || (project.peerApprovals > 0 && pr.tier === 'trusted');
+          const needsPlacement = !isReviewer && pr.tier === 'new' && project.peerApprovals > 0;
           const toReview = pr.reviewable ?? pr.review;
           const waiting = pr.review - toReview;
           return (
@@ -63,7 +88,13 @@ function LocalizerHome({ projects }: { projects: Project[] }) {
                 {canReview ? ` · ${toReview} to review` : ''}
                 {(canReview ? waiting : pr.review) > 0 ? ` · ${canReview ? waiting : pr.review} waiting for others` : ''}
               </div>
-              {project.peerApprovals > 0 && !isReviewer && (
+              {needsPlacement && (
+                <div className="small tier-note">
+                  Your translations count now. To review others' work, take the 15-minute{' '}
+                  <Link to={`/placement/${pr.locale}`}>placement check</Link>.
+                </div>
+              )}
+              {project.peerApprovals > 0 && !isReviewer && !needsPlacement && (
                 <div className="small muted">
                   A translation goes live once {project.peerApprovals === 1 ? 'another volunteer approves it' : `${project.peerApprovals} other volunteers approve it`}.
                 </div>
@@ -108,6 +139,7 @@ function AdminHome({ projects, onCreated }: { projects: Project[]; onCreated: ()
 
   return (
     <div className="stack">
+      <GradingBanner />
       <div className="row">
         <h1 style={{ margin: 0 }}>Projects</h1>
         <span className="spacer" />

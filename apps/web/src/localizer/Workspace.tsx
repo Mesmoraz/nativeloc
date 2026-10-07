@@ -113,9 +113,11 @@ export function Workspace() {
   }, [item, model, text, locale, triedSave]);
   const errors = issues.filter((i) => i.level === 'error');
   const unchanged = item?.current?.text === text;
-  // Peer reviewers (localizers on a peer-review project) approve as one vote, and can't send work back.
-  const peer = role === 'localizer' && (meta?.project.peerApprovals ?? 0) > 0;
-  const canReview = role !== 'localizer' || peer;
+  // Peer reviewers (trusted localizers on a peer-review project) approve as one vote, and can't send work back.
+  // A lead in the language reviews like a reviewer; new volunteers review after the placement check.
+  const tier = session!.user.tiers[locale];
+  const peer = role === 'localizer' && (meta?.project.peerApprovals ?? 0) > 0 && tier !== 'lead';
+  const canReview = role !== 'localizer' || tier === 'lead' || (peer && tier === 'trusted');
 
   const advance = useCallback(
     (keyId: number, saved: boolean) => {

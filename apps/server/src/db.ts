@@ -93,6 +93,54 @@ CREATE TABLE IF NOT EXISTS join_links (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   disabled_at TEXT
 );
+-- Trust per language. No row means the default for the role (see tierOf): people an admin
+-- invited are vetted already; volunteers from a sign-up link start as 'new'.
+CREATE TABLE IF NOT EXISTS user_languages (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  locale TEXT NOT NULL,
+  tier TEXT NOT NULL CHECK (tier IN ('new', 'trusted', 'lead')),
+  reason TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, locale)
+);
+-- Placement check content. 'translate': write a translation, a grader compares it with the reference.
+-- 'review': judge the candidate translation; has_error says whether a problem was planted (graded automatically).
+CREATE TABLE IF NOT EXISTS placement_items (
+  id INTEGER PRIMARY KEY,
+  org_id INTEGER NOT NULL REFERENCES orgs(id),
+  locale TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('translate', 'review')),
+  source TEXT NOT NULL,
+  reference TEXT,
+  candidate TEXT,
+  has_error INTEGER NOT NULL DEFAULT 0,
+  error_note TEXT,
+  archived INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS placement_attempts (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  locale TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('in_progress', 'submitted', 'passed', 'failed')),
+  review_correct INTEGER,
+  review_total INTEGER,
+  graded_by INTEGER REFERENCES users(id),
+  started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  submitted_at TEXT,
+  graded_at TEXT
+);
+CREATE TABLE IF NOT EXISTS placement_answers (
+  attempt_id INTEGER NOT NULL REFERENCES placement_attempts(id) ON DELETE CASCADE,
+  item_id INTEGER NOT NULL REFERENCES placement_items(id),
+  position INTEGER NOT NULL,
+  text TEXT,
+  verdict TEXT CHECK (verdict IN ('ok', 'problem')),
+  explanation TEXT,
+  correct INTEGER,
+  grader_note TEXT,
+  PRIMARY KEY (attempt_id, item_id)
+);
 CREATE TABLE IF NOT EXISTS screenshots (
   id INTEGER PRIMARY KEY,
   project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,

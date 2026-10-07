@@ -104,6 +104,30 @@ other than its author approve it. Reviewers like Lucas can still approve directl
 Admins make sign-up links under *Project → Team → Volunteer sign-up link* and set the number of
 approvals under *Overview → Peer review*.
 
+### Try the placement check
+
+Volunteers who join from a sign-up link start as **New** in their language. They can translate right
+away, but their reviews don't count until they pass a 15-minute placement check:
+- **Spot the problem:** judge translations, some of which contain a planted mistake. These grade themselves.
+- **Translate:** translate a few sentences. A reviewer or Lead grades them against a reference translation.
+
+Passing takes 80% on both parts. A volunteer who doesn't pass can try again after a week.
+
+1. Join from http://localhost:5173/join/demo-volunteers as above. Your home page says to take the
+   placement check. Open it and answer the Spanish items. Mistakes are planted in some of them.
+2. Sign out and sign in as **Lucas**. A banner shows **1 placement check to grade**. Mark each
+   translation acceptable or not, and submit.
+3. Sign back in as your volunteer. You're now **Trusted** in Spanish, and *FreshMart Kiosk* shows **Review**.
+
+Trust levels are per language:
+- **New:** translates only.
+- **Trusted:** approvals count toward peer review.
+- **Lead:** an approval is final.
+
+People an admin invites directly are Trusted. Admins can change anyone's level under
+*Team → Trust*, for example for an interpreter certification or a community partner's vouch. They edit
+each language's questions under *Team → Placement check*.
+
 ### Demo accounts
 
 | Name | Email | Password | Role |
@@ -238,7 +262,8 @@ python -m unittest discover -s sdks/python
 ```
 
 Roles: **admin** (everything), **reviewer** (translate + approve, assigned languages),
-**localizer** (translate assigned languages, and review each other's work on projects with peer review on).
+**localizer** (translate assigned languages; on projects with peer review on, review each other's work once
+**Trusted** in that language, or approve outright as a **Lead**).
 Admins invite people one at a time with an invite link, or share a reusable **volunteer sign-up link**:
 anyone with it picks a language from the link's list and joins as a localizer.
 

@@ -66,7 +66,7 @@ const approve = (p: ProjectRow, locale: string, strings: Record<string, string>)
 };
 
 approve(kiosk, 'es', {
-  welcome_title: '¡Bienvenido! Toca para empezar',
+  welcome_title: '¡Hola! Toca para empezar', // the key has a max=28 hint
   checkout: 'Pagar',
   cart_total: 'Total: {arg1}',
   'departments[0]': 'Frutas y verduras',
@@ -76,7 +76,7 @@ approve(kiosk, 'es', {
   no: 'No',
 });
 approve(kiosk, 'fr', {
-  welcome_title: 'Bienvenue ! Touchez pour commencer',
+  welcome_title: 'Touchez pour commencer',
   checkout: 'Payer',
   yes: 'Oui',
   no: 'Non',

@@ -76,14 +76,18 @@ That one command seeds the demo data the first time you run it and starts three 
 3. **Translate.** Open http://localhost:5173 and pick **Lucas** under *Demo: sign in as…*.
    Under *FreshMart Kiosk · Español*, press **Start translating**. Each string comes with the
    screenshot from step 2, with that string highlighted. Type a translation and press
-   **Save & approve** (`Ctrl+Enter`). Do a few.
-4. **Publish.** Sign out, pick **Avery (admin)**, open *FreshMart Kiosk*, and press
+   **Save & next** (`Ctrl+Enter`). `Alt+1` inserts a placeholder such as the customer's name.
+   Do a few.
+4. **Approve.** New translations wait for review, even ones from a reviewer. Go back to the
+   start page, press **Review** on the same card, and press **Approve & next** for each one.
+5. **Publish.** Sign out, pick **Avery (admin)**, open *FreshMart Kiosk*, and press
    **Publish version 2** on the Overview tab.
-5. **Watch it update.** Go back to the kiosk. Within 15 seconds it downloads the new version
-   (the header shows `bundle v2 · es`) and shows your translations.
+6. **Watch it update.** Go back to the kiosk. Within 15 seconds it downloads the new version
+   (the label next to the language buttons shows `bundle v2 · es`) and shows your translations.
+   It doesn't need a reload. A publish with no text changes leaves the screen as it is.
 
-To see the plain translator view, sign in as **María**. Her translations go to review instead of
-shipping straight away, and Lucas approves them under **Review**. Sign in as **Yuki** to see
+To see the plain translator view, sign in as **María**. She can translate but not approve, so
+Lucas approves her work under **Review**. Sign in as **Yuki** to see
 Japanese.
 
 ### Demo accounts
@@ -204,7 +208,7 @@ examples/         sample strings.xml / .pot / JSON, web kiosk simulator, Linux d
 ```bash
 npm test          # core adapters, validation, server end-to-end, JS SDK
 npm run typecheck
-python -m unittest sdks/python/test_nativeloc.py
+python -m unittest discover -s sdks/python
 ```
 
 Roles: **admin** (everything), **reviewer** (translate + approve, assigned languages),

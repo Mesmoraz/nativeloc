@@ -139,6 +139,16 @@ describe('end to end', () => {
     expect(res.statusCode).toBe(304);
   });
 
+  it('gives each bundle version its own URL so caches cannot serve stale text', async () => {
+    const { bundleToken } = (await app.inject({ url: `/api/v1/projects/${projectId}`, headers: as('admin@t.test') })).json().project;
+    const before = (await app.inject({ url: `/b/${bundleToken}/manifest.json` })).json().locales.es.url as string;
+    const keyId = (await app.inject({ url: `/api/v1/projects/${projectId}/keys`, headers: as('admin@t.test') })).json().keys.find((k: { name: string }) => k.name === 'yes').id;
+    await app.inject({ method: 'PUT', url: `/api/v1/translations/${keyId}/es`, headers: as('rev@t.test'), payload: { text: 'Sí', approve: true } });
+    const after = (await app.inject({ method: 'POST', url: `/api/v1/projects/${projectId}/publish`, headers: as('admin@t.test') })).json().manifest.locales.es.url as string;
+    expect(after).not.toBe(before);
+    expect((await app.inject({ url: after })).json().yes).toBe('Sí');
+  });
+
   it('exports native files for bundled fallbacks', async () => {
     const res = await app.inject({ url: `/api/v1/projects/${projectId}/export?format=android-xml&locale=es`, headers: bearer });
     expect(res.body).toContain('<string name="greeting">¡Hola %1$s!</string>');

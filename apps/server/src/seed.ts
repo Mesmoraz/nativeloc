@@ -8,6 +8,7 @@
  *   yuki@demo.test    / demo-localizer-pass  localizer  ja
  *
  * CLI / REST push token for the "FreshMart Kiosk" project: nl_demo_kiosk_push_token
+ * Volunteer sign-up link (Spanish, French; the kiosk uses peer review): /join/demo-volunteers
  */
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -55,6 +56,10 @@ importFile(db, kiosk, example('android/res/values/strings.xml'), 'android-xml', 
 importFile(db, scale, example('linux/messages.pot'), 'po', {});
 importFile(db, signage, example('json/en.json'), 'json', {});
 
+// Volunteers can sign themselves up, and on the kiosk two of them approving a translation ships it.
+run(db, "INSERT INTO join_links (code, org_id, locales) VALUES ('demo-volunteers', ?, ?)", orgId, JSON.stringify(['es', 'fr']));
+run(db, 'UPDATE projects SET peer_approvals = 2 WHERE id = ?', kiosk.id);
+
 run(db, 'INSERT INTO api_tokens (project_id, name, token_hash, scopes) VALUES (?, ?, ?, ?)', kiosk.id, 'demo CLI', sha256('nl_demo_kiosk_push_token'), JSON.stringify(['push']));
 
 // Approved translations for part of the kiosk, so the device simulator visibly changes language
@@ -99,4 +104,5 @@ Seeded ${dbPath}
   yuki@demo.test   / demo-localizer-pass   localizer  ja
 
   Push token (CLI / kiosk capture): nl_demo_kiosk_push_token
+  Volunteer sign-up: http://localhost:5173/join/demo-volunteers
 `);

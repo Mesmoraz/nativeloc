@@ -91,7 +91,9 @@ export function projectAccess(db: DB, req: FastifyRequest, projectId: number, ac
     admin: [],
     push: [],
   };
-  if (!needs[access].includes(user.role)) throw new HttpError(403, 'You do not have permission to do that.');
+  // With peer review on, localizers review each other's work (approvals are counted, see approveTranslation).
+  const peer = access === 'review' && user.role === 'localizer' && project.peer_approvals > 0;
+  if (!needs[access].includes(user.role) && !peer) throw new HttpError(403, 'You do not have permission to do that.');
   if (locale && (access === 'translate' || access === 'review') && !actor.locales.includes(locale)) {
     throw new HttpError(403, `You are not assigned to ${locale}.`);
   }

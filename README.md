@@ -86,9 +86,23 @@ That one command seeds the demo data the first time you run it and starts three 
    (the label next to the language buttons shows `bundle v2 · es`) and shows your translations.
    It doesn't need a reload. A publish with no text changes leaves the screen as it is.
 
-To see the plain translator view, sign in as **María**. She can translate but not approve, so
-Lucas approves her work under **Review**. Sign in as **Yuki** to see
-Japanese.
+To see the plain translator view, sign in as **María**. Sign in as **Yuki** to see Japanese.
+
+### Try volunteer sign-up and peer review
+
+The kiosk project has **peer review** turned on: a translation goes live once two volunteers
+other than its author approve it. Reviewers like Lucas can still approve directly.
+
+1. Sign out and open http://localhost:5173/join/demo-volunteers. Pick **Español**, enter any name,
+   email and password, and press **Join & start translating**. You land on your languages, ready to go.
+2. Translate a string on *FreshMart Kiosk*.
+3. Sign out and sign in as **María**. *FreshMart Kiosk* now shows **Review (1)**. Approve it, and
+   the footer shows it still needs one more volunteer. Your own work never shows up in your review queue.
+4. A second volunteer's approval (or Lucas's) ships it. A peer who disagrees edits the text and presses
+   **Submit my version**. That resubmits it under their name, and the approvals start over.
+
+Admins make sign-up links under *Project → Team → Volunteer sign-up link* and set the number of
+approvals under *Overview → Peer review*.
 
 ### Demo accounts
 
@@ -212,8 +226,9 @@ python -m unittest discover -s sdks/python
 ```
 
 Roles: **admin** (everything), **reviewer** (translate + approve, assigned languages),
-**localizer** (translate assigned languages). Admins invite people with a link; invitees
-choose a password and land in their queue.
+**localizer** (translate assigned languages, and review each other's work on projects with peer review on).
+Admins invite people one at a time with an invite link, or share a reusable **volunteer sign-up link**:
+anyone with it picks a language from the link's list and joins as a localizer.
 
 ### Not in this MVP
 

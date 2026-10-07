@@ -171,3 +171,74 @@ describe('end to end', () => {
     expect(item.suggestions[0].score).toBeGreaterThan(90);
   });
 });
+
+describe('volunteers and peer review', () => {
+  const vols = ['ana@t.test', 'ben@t.test', 'cy@t.test'];
+  let code: string;
+  let keyId: number;
+
+  async function join(email: string, extra: Record<string, unknown> = {}) {
+    const res = await app.inject({ method: 'POST', url: `/api/v1/join/${code}`, payload: { name: email.split('@')[0], email, password: 'pw-12345678', locales: ['es'], ...extra } });
+    const c = res.cookies.find((x) => x.name === 'nl_sid');
+    if (c) cookies[email] = `nl_sid=${c.value}`;
+    return res;
+  }
+  const approve = (email: string) => app.inject({ method: 'POST', url: `/api/v1/translations/${keyId}/es/approve`, headers: as(email) });
+  const reviewQueue = async (email: string) =>
+    (await app.inject({ url: `/api/v1/projects/${projectId}/queue?locale=es&mode=review`, headers: as(email) })).json().items.map((i: { keyId: number }) => i.keyId);
+
+  beforeAll(async () => {
+    await app.inject({ method: 'POST', url: `/api/v1/projects/${projectId}/keys`, headers: bearer, payload: { entries: [{ key: 'thanks', source: 'Thank you!' }] } });
+    keyId = db.prepare("SELECT id FROM keys WHERE name = 'thanks'").get()!.id as number;
+  });
+
+  it('lets anyone with a join link sign up for its languages', async () => {
+    let res = await app.inject({ method: 'POST', url: '/api/v1/join-links', headers: as('loc@t.test'), payload: { locales: ['es'] } });
+    expect(res.statusCode).toBe(403);
+    res = await app.inject({ method: 'POST', url: '/api/v1/join-links', headers: as('admin@t.test'), payload: { locales: ['es'] } });
+    code = res.json().link.code;
+
+    res = await app.inject({ url: `/api/v1/join/${code}` });
+    expect(res.json()).toMatchObject({ org: 'Test', locales: ['es'], projects: ['Kiosk'], me: null });
+    expect((await join('ana@t.test', { locales: ['ja'] })).statusCode).toBe(400); // not offered by this link
+    for (const v of vols) expect((await join(v)).json().user).toMatchObject({ role: 'localizer', locales: ['es'] });
+    expect((await join('ana@t.test')).statusCode).toBe(409);
+  });
+
+  it('needs approvals from other volunteers once peer review is on', async () => {
+    // Off by default: localizers can't review.
+    expect((await approve('ben@t.test')).statusCode).toBe(403);
+    await app.inject({ method: 'PATCH', url: `/api/v1/projects/${projectId}`, headers: as('admin@t.test'), payload: { peerApprovals: 2 } });
+
+    let res = await app.inject({ method: 'PUT', url: `/api/v1/translations/${keyId}/es`, headers: as('ana@t.test'), payload: { text: '¡Gracias!' } });
+    expect(res.json().status).toBe('review');
+    expect(await reviewQueue('ana@t.test')).not.toContain(keyId); // never your own work
+    expect((await approve('ana@t.test')).statusCode).toBe(403);
+
+    expect(await reviewQueue('ben@t.test')).toContain(keyId);
+    expect((await approve('ben@t.test')).json()).toEqual({ status: 'review', approvals: { count: 1, needed: 2 } });
+    expect(await reviewQueue('ben@t.test')).not.toContain(keyId); // already approved by Ben
+
+    // Peers can't discard work; they improve it, which restarts the approvals under the new author.
+    expect((await app.inject({ method: 'POST', url: `/api/v1/translations/${keyId}/es/reject`, headers: as('cy@t.test') })).statusCode).toBe(403);
+    res = await app.inject({ method: 'PUT', url: `/api/v1/translations/${keyId}/es`, headers: as('cy@t.test'), payload: { text: '¡Muchas gracias!', approve: true } });
+    expect(res.json().status).toBe('review');
+    expect(await reviewQueue('ben@t.test')).toContain(keyId);
+
+    const projects = (await app.inject({ url: '/api/v1/projects', headers: as('ana@t.test') })).json().projects;
+    expect(projects[0].progress[0].reviewable).toBeGreaterThan(0);
+
+    expect((await approve('ana@t.test')).json().approvals).toEqual({ count: 1, needed: 2 });
+    expect((await approve('ben@t.test')).json()).toEqual({ status: 'approved', approvals: { count: 2, needed: 2 } });
+  });
+
+  it('adds languages to an existing account from a new link', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/v1/join-links', headers: as('admin@t.test'), payload: { locales: ['ja'] } });
+    code = res.json().link.code;
+    expect((await app.inject({ url: `/api/v1/join/${code}`, headers: as('ana@t.test') })).json().me).toMatchObject({ email: 'ana@t.test' });
+    const joined = await app.inject({ method: 'POST', url: `/api/v1/join/${code}`, headers: as('ana@t.test'), payload: { locales: ['ja'] } });
+    expect(joined.json().user.locales).toEqual(['es', 'ja']);
+    await app.inject({ method: 'DELETE', url: `/api/v1/join-links/${code}`, headers: as('admin@t.test') });
+    expect((await app.inject({ url: `/api/v1/join/${code}` })).statusCode).toBe(404);
+  });
+});

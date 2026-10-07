@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { TopBar } from '../App';
-import { api, type Project, type User } from '../api';
+import { api, type JoinLink, type Project, type User } from '../api';
 import { ChipText, ProgressBar, StatusBadge } from '../components';
-import { languageName } from '../types';
+import { languageName, nativeLanguageName } from '../types';
 import { Screenshots } from './Screenshots';
 
 type Tab = 'overview' | 'strings' | 'import' | 'screens' | 'team' | 'questions' | 'devices';
@@ -166,6 +166,16 @@ function Overview({ project, manifest, reload }: { project: Project; manifest: M
         <label className="row small">
           <input type="checkbox" checked={project.requireReview} onChange={(e) => void saveSettings({ requireReview: e.target.checked })} />
           Translations by localizers need a reviewer's approval before they ship
+        </label>
+        <label className="row small">
+          Peer review:
+          <select value={project.peerApprovals} onChange={(e) => void saveSettings({ peerApprovals: Number(e.target.value) })} disabled={!project.requireReview}>
+            <option value={0}>Off (only reviewers approve)</option>
+            <option value={1}>1 other volunteer approves</option>
+            <option value={2}>2 other volunteers approve</option>
+            <option value={3}>3 other volunteers approve</option>
+          </select>
+          <span className="muted">Localizers check each other's work; reviewers can still approve directly.</span>
         </label>
       </div>
 
@@ -385,6 +395,8 @@ function Team({ project }: { project: Project }) {
 
   return (
     <div className="stack" style={{ gap: 20 }}>
+      <VolunteerLinks project={project} />
+
       <form className="card stack" onSubmit={create}>
         <h2 style={{ margin: 0 }}>Invite a native speaker</h2>
         <p className="small muted" style={{ margin: 0 }}>
@@ -462,6 +474,73 @@ interface Question {
   user: string;
   key: string;
   source: string;
+}
+
+/** Reusable sign-up links: share one in a community group, newsletter or flyer and volunteers join themselves. */
+function VolunteerLinks({ project }: { project: Project }) {
+  const [links, setLinks] = useState<JoinLink[]>([]);
+  const [picked, setPicked] = useState<string[]>(project.locales);
+  const [copied, setCopied] = useState('');
+
+  const load = () => api<{ links: JoinLink[] }>('/api/v1/join-links').then((r) => setLinks(r.links));
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function create() {
+    await api('/api/v1/join-links', { body: { locales: picked } });
+    await load();
+  }
+  async function disable(code: string) {
+    await api(`/api/v1/join-links/${code}`, { method: 'DELETE' });
+    await load();
+  }
+  function copy(url: string) {
+    void navigator.clipboard.writeText(url);
+    setCopied(url);
+    setTimeout(() => setCopied(''), 2000);
+  }
+
+  return (
+    <div className="card stack">
+      <h2 style={{ margin: 0 }}>Volunteer sign-up link</h2>
+      <p className="small muted" style={{ margin: 0 }}>
+        One link for everyone. Volunteers pick their language, create an account and start translating straight away.
+        {project.peerApprovals > 0
+          ? ` Their work goes live once ${project.peerApprovals} other volunteer${project.peerApprovals === 1 ? '' : 's'} approve it.`
+          : ' Turn on peer review in Overview so volunteers can approve each other’s work.'}
+      </p>
+      <div className="row small">
+        {project.locales.map((l) => (
+          <label key={l} className="row" style={{ gap: 4 }}>
+            <input type="checkbox" checked={picked.includes(l)} onChange={() => setPicked((p) => (p.includes(l) ? p.filter((x) => x !== l) : [...p, l]))} />
+            {languageName(l)}
+          </label>
+        ))}
+        <span className="spacer" />
+        <button className="primary" onClick={() => void create()} disabled={!picked.length}>
+          Create sign-up link
+        </button>
+      </div>
+      {links.map((l) => {
+        const url = location.origin + l.path;
+        return (
+          <div key={l.code} className="alert ok row">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <code style={{ wordBreak: 'break-all' }}>{url}</code>
+              <div className="small">{l.locales.map(nativeLanguageName).join(' · ')}</div>
+            </div>
+            <button type="button" onClick={() => copy(url)}>
+              {copied === url ? 'Copied ✓' : 'Copy'}
+            </button>
+            <button type="button" className="ghost" onClick={() => void disable(l.code)}>
+              Turn off
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function Questions({ projectId }: { projectId: number }) {

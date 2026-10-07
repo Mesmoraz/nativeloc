@@ -33,6 +33,15 @@ class FormatTests(unittest.TestCase):
         self.assertEqual(plural_category("ar", 11), "many")
         self.assertEqual(plural_category("ja", 1), "other")
 
+    def test_filipino_categories_match_cldr(self):
+        # CLDR fil/tl: "other" only for integers ending in 4, 6 or 9 (and fractions likewise)
+        for n in (0, 1, 2, 3, 5, 7, 8, 10, 11, 12, 15, 101, 1000):
+            self.assertEqual(plural_category("tl", n), "one", n)
+        for n in (4, 6, 9, 14, 16, 19, 24, 106):
+            self.assertEqual(plural_category("fil", n), "other", n)
+        self.assertEqual(plural_category("fil-PH", 2.5), "one")
+        self.assertEqual(plural_category("tl", 2.4), "other")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -29,17 +29,17 @@ Bundle = Dict[str, str]
 # --------------------------------------------------------------------------- plurals
 
 def _ivf(n: float):
-    """CLDR operands: integer part, number of visible fraction digits."""
+    """CLDR operands: integer part, number of visible fraction digits, fraction digits."""
     s = repr(float(n)).rstrip("0").rstrip(".") if not float(n).is_integer() else str(int(n))
     i = int(abs(float(n)))
-    v = len(s.split(".")[1]) if "." in s else 0
-    return i, v
+    frac = s.split(".")[1] if "." in s else ""
+    return i, len(frac), int(frac or 0)
 
 
 def plural_category(locale: str, n: float) -> str:
     """CLDR cardinal plural category for common languages."""
     lang = locale.replace("_", "-").split("-")[0].lower()
-    i, v = _ivf(n)
+    i, v, f = _ivf(n)
     millions = v == 0 and i != 0 and i % 1_000_000 == 0
     if lang in ("ja", "zh", "ko", "th", "vi", "id", "ms", "lo", "my"):
         return "other"
@@ -85,6 +85,10 @@ def plural_category(locale: str, n: float) -> str:
         if v == 0 and 11 <= i % 100 <= 99:
             return "many"
         return "other"
+    if lang in ("tl", "fil"):
+        if v == 0:
+            return "one" if i in (1, 2, 3) or i % 10 not in (4, 6, 9) else "other"
+        return "one" if f % 10 not in (4, 6, 9) else "other"
     if lang == "he":
         if (i == 1 and v == 0) or (i == 0 and v != 0):
             return "one"

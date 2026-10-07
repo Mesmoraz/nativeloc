@@ -5,6 +5,7 @@ import { api, type User } from './api';
 import { Workspace } from './localizer/Workspace';
 import { Home } from './pages/Home';
 import { Invite } from './pages/Invite';
+import { Join } from './pages/Join';
 import { Login } from './pages/Login';
 
 interface Session {
@@ -67,6 +68,7 @@ export function App() {
     <SessionContext.Provider value={{ session, refresh, logout }}>
       <Routes>
         <Route path="/invite/:token" element={<Invite />} />
+        <Route path="/join/:code" element={<Join />} />
         {!session ? (
           <Route path="*" element={<Login />} />
         ) : (

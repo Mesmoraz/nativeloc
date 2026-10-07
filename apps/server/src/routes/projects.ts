@@ -4,7 +4,7 @@ import { ADAPTERS, detectFormat, displayKey, type SourceEntry } from '@nativeloc
 import type { FastifyInstance } from 'fastify';
 import { actorOf, HttpError, projectAccess, randomToken, requireUser, sha256 } from '../auth.js';
 import { all, get, run, tx, type DB, type KeyRow, type ProjectRow } from '../db.js';
-import { exportFile, importFile, manifest, progress, projectLocales, publish, upsertEntries } from '../services.js';
+import { exportFile, importFile, manifest, progress, projectLocales, publish, reviewable, upsertEntries } from '../services.js';
 import { checkLocale, imageSize, intParam, readMultipart } from '../util.js';
 
 export interface ProjectDeps {
@@ -19,9 +19,10 @@ function projectJson(db: DB, p: ProjectRow) {
     sourceLocale: p.source_locale,
     locales: projectLocales(db, p.id),
     requireReview: !!p.require_review,
+    peerApprovals: p.peer_approvals,
     version: p.version,
     bundleToken: p.bundle_token,
-    progress: progress(db, p.id),
+    progress: progress(db, p.id) as (ReturnType<typeof progress>[number] & { reviewable?: number })[],
   };
 }
 
@@ -40,10 +41,13 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
 
   app.get('/api/v1/projects', async (req) => {
     const { user, locales } = requireUser(db, req);
-    const projects = all<ProjectRow>(db, 'SELECT * FROM projects WHERE org_id = ? ORDER BY name', user.org_id).map((p) => projectJson(db, p));
-    // Localizers only see the languages they work on.
+    const rows = all<ProjectRow>(db, 'SELECT * FROM projects WHERE org_id = ? ORDER BY name', user.org_id);
+    const projects = rows.map((p) => projectJson(db, p));
+    // Localizers only see the languages they work on, and how much of it they can review.
     if (user.role !== 'admin') {
-      for (const p of projects) p.progress = p.progress.filter((r) => locales.includes(r.locale));
+      projects.forEach((p, i) => {
+        p.progress = p.progress.filter((r) => locales.includes(r.locale)).map((r) => ({ ...r, reviewable: reviewable(db, rows[i], r.locale, user) }));
+      });
       return { projects: projects.filter((p) => p.progress.length) };
     }
     return { projects };
@@ -71,11 +75,16 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
     return { project: json, manifest: manifest(db, project) };
   });
 
-  app.patch<{ Params: { id: string }; Body: { name?: string; requireReview?: boolean; locales?: string[] } }>('/api/v1/projects/:id', async (req) => {
+  app.patch<{ Params: { id: string }; Body: { name?: string; requireReview?: boolean; peerApprovals?: number; locales?: string[] } }>('/api/v1/projects/:id', async (req) => {
     const { project } = projectAccess(db, req, intParam(req.params.id), 'admin');
     tx(db, () => {
       if (req.body?.name?.trim()) run(db, 'UPDATE projects SET name = ? WHERE id = ?', req.body.name.trim(), project.id);
       if (typeof req.body?.requireReview === 'boolean') run(db, 'UPDATE projects SET require_review = ? WHERE id = ?', req.body.requireReview ? 1 : 0, project.id);
+      if (req.body?.peerApprovals !== undefined) {
+        const n = req.body.peerApprovals;
+        if (!Number.isInteger(n) || n < 0 || n > 5) throw new HttpError(400, 'Peer approvals must be a whole number from 0 to 5.');
+        run(db, 'UPDATE projects SET peer_approvals = ? WHERE id = ?', n, project.id);
+      }
       if (req.body?.locales) {
         const wanted = [...new Set(req.body.locales.map(checkLocale))].filter((l) => l !== project.source_locale);
         run(db, 'DELETE FROM project_locales WHERE project_id = ?', project.id);

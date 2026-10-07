@@ -199,10 +199,32 @@ export function screenshotContext(db: DB, keyId: number) {
   };
 }
 
-export function queue(db: DB, project: ProjectRow, locale: string, mode: 'translate' | 'review', opts: { limit?: number; exclude?: number[]; keyId?: number } = {}) {
+/** Peer reviewers never see their own work, or work they already approved. */
+const PEER_FILTER = 'AND t.updated_by IS NOT ? AND NOT EXISTS (SELECT 1 FROM votes v WHERE v.key_id = t.key_id AND v.locale = t.locale AND v.user_id = ?)';
+const isPeer = (project: ProjectRow, user?: UserRow) => !!user && user.role === 'localizer' && project.peer_approvals > 0;
+
+/** Translations in review that `user` can act on (for peers: not their own, not yet approved by them). */
+export function reviewable(db: DB, project: ProjectRow, locale: string, user: UserRow): number {
+  const peer = isPeer(project, user);
+  return get<{ n: number }>(
+    db,
+    `SELECT COUNT(*) AS n FROM translations t JOIN keys k ON k.id = t.key_id
+     WHERE k.project_id = ? AND k.archived = 0 AND t.locale = ? AND t.status = 'review' ${peer ? PEER_FILTER : ''}`,
+    project.id, locale, ...(peer ? [user.id, user.id] : []),
+  )!.n;
+}
+
+export function queue(
+  db: DB,
+  project: ProjectRow,
+  locale: string,
+  mode: 'translate' | 'review',
+  opts: { limit?: number; exclude?: number[]; keyId?: number; viewer?: UserRow } = {},
+) {
   const limit = Math.min(opts.limit ?? 20, 50);
   const exclude = (opts.exclude ?? []).filter(Number.isFinite);
-  const statusFilter = mode === 'review' ? "t.status = 'review'" : "(t.status IS NULL OR t.status = 'outdated')";
+  const peer = mode === 'review' && isPeer(project, opts.viewer);
+  const statusFilter = mode === 'review' ? `t.status = 'review' ${peer ? PEER_FILTER : ''}` : "(t.status IS NULL OR t.status = 'outdated')";
   // Keys that share a screen come together, so localizers stay in one visual context.
   const keys = all<KeyRow & { t_text: string | null; t_status: TranslationRow['status'] | null }>(
     db,
@@ -214,7 +236,7 @@ export function queue(db: DB, project: ProjectRow, locale: string, mode: 'transl
      ORDER BY (SELECT MIN(screenshot_id) FROM screenshot_keys WHERE key_id = k.id) IS NULL,
               (SELECT MIN(screenshot_id) FROM screenshot_keys WHERE key_id = k.id), k.id
      LIMIT ?`,
-    locale, project.id, ...(opts.keyId ? [opts.keyId] : []), ...exclude, limit,
+    locale, project.id, ...(opts.keyId ? [opts.keyId] : peer ? [opts.viewer!.id, opts.viewer!.id] : []), ...exclude, limit,
   );
 
   const pool = all<{ key_id: number; source: string; text: string }>(
@@ -247,10 +269,17 @@ export function queue(db: DB, project: ProjectRow, locale: string, mode: 'transl
       screenshot: screenshotContext(db, k.id),
       suggestions: suggestionsFor(pool, k),
       questions: openQuestions,
+      approvals: k.t_status === 'review' && project.peer_approvals > 0 ? { count: approvalCount(db, k.id, locale), needed: project.peer_approvals } : null,
     };
   });
   const p = progress(db, project.id).find((r) => r.locale === locale);
-  return { project: { id: project.id, name: project.name, sourceLocale: project.source_locale }, locale, mode, progress: p, items };
+  return {
+    project: { id: project.id, name: project.name, sourceLocale: project.source_locale, peerApprovals: project.peer_approvals },
+    locale,
+    mode,
+    progress: p,
+    items,
+  };
 }
 
 // ---------- saving ----------
@@ -268,7 +297,36 @@ export function saveTranslation(db: DB, project: ProjectRow, user: UserRow, keyI
      ON CONFLICT (key_id, locale) DO UPDATE SET text = excluded.text, status = excluded.status, updated_by = excluded.updated_by, updated_at = CURRENT_TIMESTAMP`,
     keyId, locale, text, status, user.id,
   );
+  // Approvals were for the old wording.
+  run(db, 'DELETE FROM votes WHERE key_id = ? AND locale = ?', keyId, locale);
   return { status, issues };
+}
+
+const approvalCount = (db: DB, keyId: number, locale: string) =>
+  get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM votes WHERE key_id = ? AND locale = ?', keyId, locale)!.n;
+
+/**
+ * Reviewers and admins approve outright. With peer review on, a localizer's approval is one vote;
+ * the translation is approved once `peer_approvals` people other than its author have approved it.
+ */
+export function approveTranslation(db: DB, project: ProjectRow, user: UserRow, keyId: number, locale: string) {
+  const t = get<TranslationRow>(db, 'SELECT * FROM translations WHERE key_id = ? AND locale = ?', keyId, locale);
+  if (!t) throw new HttpError(404, 'Nothing to approve yet.');
+  if (!isPeer(project, user)) {
+    run(db, "UPDATE translations SET status = 'approved', updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE key_id = ? AND locale = ?", user.id, keyId, locale);
+    run(db, 'DELETE FROM votes WHERE key_id = ? AND locale = ?', keyId, locale);
+    return { status: 'approved' as const };
+  }
+  if (t.status !== 'review') throw new HttpError(409, 'This one is no longer waiting for review.');
+  if (t.updated_by === user.id) throw new HttpError(403, "You can't approve your own translation. Another volunteer will review it.");
+  return tx(db, () => {
+    run(db, 'INSERT OR IGNORE INTO votes (key_id, locale, user_id) VALUES (?, ?, ?)', keyId, locale, user.id);
+    const count = approvalCount(db, keyId, locale);
+    // The author keeps credit (updated_by) when peers approve.
+    const status = count >= project.peer_approvals ? 'approved' : 'review';
+    if (status === 'approved') run(db, "UPDATE translations SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE key_id = ? AND locale = ?", keyId, locale);
+    return { status, approvals: { count, needed: project.peer_approvals } };
+  });
 }
 
 // ---------- publish & export ----------

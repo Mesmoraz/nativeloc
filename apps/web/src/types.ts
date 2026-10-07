@@ -7,6 +7,8 @@ export interface LocaleProgressLike {
   review: number;
   outdated: number;
   todo: number;
+  /** For localizers: translations in review they can act on (not their own, not yet approved by them). */
+  reviewable?: number;
 }
 
 /** "es" → "Spanish", "pt-BR" → "Portuguese (Brazil)". */

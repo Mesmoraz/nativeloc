@@ -48,7 +48,7 @@ export function Workspace() {
   const { projectId = '', locale = '', mode: modeParam = 'translate' } = useParams();
   const mode = modeParam === 'review' ? 'review' : 'translate';
   const { session } = useSession();
-  const canReview = session!.user.role !== 'localizer';
+  const role = session!.user.role;
 
   const [meta, setMeta] = useState<Omit<QueueResponse, 'items'> | null>(null);
   const [items, setItems] = useState<QueueItem[]>([]);
@@ -113,6 +113,9 @@ export function Workspace() {
   }, [item, model, text, locale, triedSave]);
   const errors = issues.filter((i) => i.level === 'error');
   const unchanged = item?.current?.text === text;
+  // Peer reviewers (localizers on a peer-review project) approve as one vote, and can't send work back.
+  const peer = role === 'localizer' && (meta?.project.peerApprovals ?? 0) > 0;
+  const canReview = role !== 'localizer' || peer;
 
   const advance = useCallback(
     (keyId: number, saved: boolean) => {
@@ -139,8 +142,13 @@ export function Workspace() {
     setSaving(true);
     try {
       if (mode === 'review' && unchanged && item.current) {
-        await api(`/api/v1/translations/${item.keyId}/${locale}/approve`, { method: 'POST' });
+        const r = await api<{ status: string; approvals?: { count: number; needed: number } }>(`/api/v1/translations/${item.keyId}/${locale}/approve`, { method: 'POST' });
+        if (r.status === 'review' && r.approvals) {
+          const left = r.approvals.needed - r.approvals.count;
+          flash(`Approved. ${left} more volunteer${left === 1 ? '' : 's'} need${left === 1 ? 's' : ''} to approve it before it goes live.`);
+        }
       } else {
+        if (peer && mode === 'review') flash('Thanks! Your version goes to other volunteers for review.');
         await api(`/api/v1/translations/${item.keyId}/${locale}`, { method: 'PUT', body: { text, approve: mode === 'review' } });
       }
       advance(item.keyId, true);
@@ -171,12 +179,16 @@ export function Workspace() {
     setItems((cur) => [r.items[0], ...cur.filter((i) => i.keyId !== last)]);
   }
 
+  function flash(message: string) {
+    setNotice(message);
+    setTimeout(() => setNotice(''), 4000);
+  }
+
   async function sendQuestion() {
     if (!item || !asking?.trim()) return;
     await api(`/api/v1/keys/${item.keyId}/questions`, { body: { locale, text: asking } });
     setAsking(null);
-    setNotice('Question sent. You can skip this one and come back later.');
-    setTimeout(() => setNotice(''), 4000);
+    flash('Question sent. You can skip this one and come back later.');
   }
 
   function insert(token: string) {
@@ -276,6 +288,11 @@ export function Workspace() {
             {doneCount ? `You finished ${doneCount} string${doneCount === 1 ? '' : 's'} this session. ` : ''}
             Nothing else is waiting in {languageName(locale)} {mode === 'review' ? 'review' : 'right now'}.
           </p>
+          {notice && (
+            <div className="alert ok" style={{ maxWidth: 440, margin: '0 auto 16px' }}>
+              {notice}
+            </div>
+          )}
           <div className="row" style={{ justifyContent: 'center' }}>
             <Link className="btn primary" to="/">
               Back to my languages
@@ -518,17 +535,31 @@ export function Workspace() {
             Ask a question
           </button>
           <span className="spacer" />
-          {mode === 'review' && (
+          {mode === 'review' && item.approvals && <Approvals {...item.approvals} />}
+          {mode === 'review' && !peer && (
             <button className="danger" onClick={() => void sendBack()}>
               Send back
             </button>
           )}
           <button className="primary" onClick={() => void save()} disabled={saving || (triedSave && errors.length > 0)}>
-            {mode === 'review' ? (unchanged ? 'Approve' : 'Save & approve') : 'Save'} & next <span className="kbd-hint">{MOD}+Enter</span>
+            {mode === 'review' ? (unchanged ? 'Approve' : peer ? 'Submit my version' : 'Save & approve') : 'Save'} & next <span className="kbd-hint">{MOD}+Enter</span>
           </button>
         </div>
       </footer>
     </>
+  );
+}
+
+function Approvals({ count, needed }: { count: number; needed: number }) {
+  return (
+    <span className="approvals small muted" title={`${count} of ${needed} approvals`}>
+      {Array.from({ length: needed }, (_, i) => (
+        <span key={i} className={`dot ${i < count ? 'on' : ''}`} />
+      ))}
+      <span className="hide-sm">
+        {count} of {needed} approvals
+      </span>
+    </span>
   );
 }
 

@@ -41,10 +41,14 @@ function LocalizerHome({ projects }: { projects: Project[] }) {
           Pick up where you left off. Strings are shown one at a time with a picture of where they appear.
         </p>
       </div>
-      {!work.length && <div className="card muted">Nothing is assigned to you yet. Your admin will add you to a language.</div>}
+      {!work.length && <div className="card muted">Nothing is assigned to you yet. Your admin will add you to a language, or open a volunteer sign-up link to pick one.</div>}
       <div className="grid-cards">
         {work.map(({ project, pr }) => {
           const toTranslate = pr.todo + pr.outdated;
+          // Reviewers review everything; with peer review on, localizers review each other's work.
+          const canReview = isReviewer || project.peerApprovals > 0;
+          const toReview = pr.reviewable ?? pr.review;
+          const waiting = pr.review - toReview;
           return (
             <div className="card stack" key={`${project.id}-${pr.locale}`}>
               <div>
@@ -55,15 +59,22 @@ function LocalizerHome({ projects }: { projects: Project[] }) {
               </div>
               <ProgressBar p={pr} />
               <div className="small muted">
-                {pr.approved} of {pr.total} done · {toTranslate} to translate{isReviewer ? ` · ${pr.review} to review` : pr.review ? ` · ${pr.review} waiting for review` : ''}
+                {pr.approved} of {pr.total} done · {toTranslate} to translate
+                {canReview ? ` · ${toReview} to review` : ''}
+                {(canReview ? waiting : pr.review) > 0 ? ` · ${canReview ? waiting : pr.review} waiting for others` : ''}
               </div>
+              {project.peerApprovals > 0 && !isReviewer && (
+                <div className="small muted">
+                  A translation goes live once {project.peerApprovals === 1 ? 'another volunteer approves it' : `${project.peerApprovals} other volunteers approve it`}.
+                </div>
+              )}
               <div className="row">
                 <Link className={`btn ${toTranslate ? 'primary' : ''}`} to={`/p/${project.id}/${pr.locale}/translate`}>
                   {toTranslate ? 'Start translating' : 'All translated ✓'}
                 </Link>
-                {isReviewer && (
-                  <Link className={`btn ${pr.review && !toTranslate ? 'primary' : ''}`} to={`/p/${project.id}/${pr.locale}/review`}>
-                    Review ({pr.review})
+                {canReview && (
+                  <Link className={`btn ${toReview && !toTranslate ? 'primary' : ''}`} to={`/p/${project.id}/${pr.locale}/review`}>
+                    Review ({toReview})
                   </Link>
                 )}
               </div>

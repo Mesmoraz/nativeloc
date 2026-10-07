@@ -17,7 +17,7 @@
     "seed": "npm run seed -w @nativeloc/server",
     "seed:reset": "npm run seed:reset -w @nativeloc/server",
     "test": "vitest run",
-    "typecheck": "tsc -p packages/core && tsc -p apps/server && tsc -p apps/web && tsc -p packages/cli && tsc -p sdks/js"
+    "typecheck": "tsc -p packages/core && tsc -p packages/site && tsc -p apps/server && tsc -p apps/web && tsc -p packages/cli && tsc -p sdks/js"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

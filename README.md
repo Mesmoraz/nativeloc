@@ -182,6 +182,17 @@ that are no longer sent.
 
 **Web upload.** Project → *Import & export*.
 
+**Websites.** `npx nativeloc crawl https://example.org` reads a public site the way a search engine
+does. It respects robots.txt, waits between requests, and reads help pages (food, housing, hours, apply,
+contact…) before blogs and news. Every heading, paragraph, button, image description and page description
+becomes one string. Text that repeats across pages, like menus and footers, is one string. Links and bold
+text inside a sentence become chips, so translators never see HTML. Keys come from the text itself, so
+when the site changes, edited sentences fall back to English until they're translated again.
+`--dry-run` reports pages, strings, words and a rough volunteer-hours estimate without uploading.
+`--prune` archives text that is no longer on the site. The reader lives in `packages/site`. Its
+segmenter runs over a small tree interface, so a future in-page script can run the same code on the live
+page and find the same keys.
+
 **Screenshots.** Use the SDK capture helpers (exact boxes), the CLI, or upload and draw boxes in
 *Screenshots*.
 
@@ -210,6 +221,7 @@ label.set_text(loc.t("%d label printed", arg1=3))
 
 ```
 packages/core     ICU validation, plural rules, editor model, format adapters (shared by everything)
+packages/site     Website reader: page segmentation, crawler, site → strings
 packages/cli      nativeloc CLI
 apps/server       Fastify + node:sqlite API, auth, queue, publish, device endpoints
 apps/web          React app: localizer workspace + admin

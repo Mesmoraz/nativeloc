@@ -1,0 +1,13 @@
+{
+  "name": "@nativeloc/site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read a website into NativeLoc strings: segment pages, crawl a site, map text to stable keys",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@nativeloc/core": "*",
+    "parse5": "^8.0.0"
+  }
+}

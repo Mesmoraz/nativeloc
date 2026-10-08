@@ -40,6 +40,7 @@ settled_at)`, with `status` one of `pending`, `accepted`, `voided`. Totals are s
 | A peer approval vote | +5 **pending** for the voter |
 | Someone else changes the text, or a reviewer sends it back (`reject`) | The previous author's pending XP and all pending vote XP for that key+locale → **voided** |
 | A reviewer/admin approves outright | No XP for them (it's their job); the author's pending → accepted |
+| A volunteer lead approves someone else's translation while it's in review | +5 **accepted** for the lead (their approval is final); the author's pending → accepted. Approving again, or approving their own text, earns nothing |
 
 Rules: one pending translate event per user per key+locale (re-saving your own text doesn't stack); XP
 never goes negative; accepted XP is never taken back.

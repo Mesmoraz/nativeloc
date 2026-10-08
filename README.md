@@ -86,9 +86,47 @@ That one command seeds the demo data the first time you run it and starts three 
    (the label next to the language buttons shows `bundle v2 · es`) and shows your translations.
    It doesn't need a reload. A publish with no text changes leaves the screen as it is.
 
-To see the plain translator view, sign in as **María**. She can translate but not approve, so
-Lucas approves her work under **Review**. Sign in as **Yuki** to see
-Japanese.
+To see the plain translator view, sign in as **María**. Sign in as **Yuki** to see Japanese.
+
+### Try volunteer sign-up and peer review
+
+The kiosk project has **peer review** turned on: a translation goes live once two volunteers
+other than its author approve it. Reviewers like Lucas can still approve directly.
+
+1. Sign out and open http://localhost:5173/join/demo-volunteers. Pick **Español**, enter any name,
+   email and password, and press **Join & start translating**. You land on your languages, ready to go.
+2. Translate a string on *FreshMart Kiosk*.
+3. Sign out and sign in as **María**. *FreshMart Kiosk* now shows **Review (1)**. Approve it, and
+   the footer shows it still needs one more volunteer. Your own work never shows up in your review queue.
+4. A second volunteer's approval (or Lucas's) ships it. A peer who disagrees edits the text and presses
+   **Submit my version**. That resubmits it under their name, and the approvals start over.
+
+Admins make sign-up links under *Project → Team → Volunteer sign-up link* and set the number of
+approvals under *Overview → Peer review*.
+
+### Try the placement check
+
+Volunteers who join from a sign-up link start as **New** in their language. They can translate right
+away, but their reviews don't count until they pass a 15-minute placement check:
+- **Spot the problem:** judge translations, some of which contain a planted mistake. These grade themselves.
+- **Translate:** translate a few sentences. A reviewer or Lead grades them against a reference translation.
+
+Passing takes 80% on both parts. A volunteer who doesn't pass can try again after a week.
+
+1. Join from http://localhost:5173/join/demo-volunteers as above. Your home page says to take the
+   placement check. Open it and answer the Spanish items. Mistakes are planted in some of them.
+2. Sign out and sign in as **Lucas**. A banner shows **1 placement check to grade**. Mark each
+   translation acceptable or not, and submit.
+3. Sign back in as your volunteer. You're now **Trusted** in Spanish, and *FreshMart Kiosk* shows **Review**.
+
+Trust levels are per language:
+- **New:** translates only.
+- **Trusted:** approvals count toward peer review.
+- **Lead:** an approval is final.
+
+People an admin invites directly are Trusted. Admins can change anyone's level under
+*Team → Trust*, for example for an interpreter certification or a community partner's vouch. They edit
+each language's questions under *Team → Placement check*.
 
 ### Demo accounts
 
@@ -168,6 +206,17 @@ that are no longer sent.
 
 **Web upload.** Project → *Import & export*.
 
+**Websites.** `npx nativeloc crawl https://example.org` reads a public site the way a search engine
+does. It respects robots.txt, waits between requests, and reads help pages (food, housing, hours, apply,
+contact…) before blogs and news. Every heading, paragraph, button, image description and page description
+becomes one string. Text that repeats across pages, like menus and footers, is one string. Links and bold
+text inside a sentence become chips, so translators never see HTML. Keys come from the text itself, so
+when the site changes, edited sentences fall back to English until they're translated again.
+`--dry-run` reports pages, strings, words and a rough volunteer-hours estimate without uploading.
+`--prune` archives text that is no longer on the site. The reader lives in `packages/site`. Its
+segmenter runs over a small tree interface, so a future in-page script can run the same code on the live
+page and find the same keys.
+
 **Screenshots.** Use the SDK capture helpers (exact boxes), the CLI, or upload and draw boxes in
 *Screenshots*.
 
@@ -196,6 +245,7 @@ label.set_text(loc.t("%d label printed", arg1=3))
 
 ```
 packages/core     ICU validation, plural rules, editor model, format adapters (shared by everything)
+packages/site     Website reader: page segmentation, crawler, site → strings
 packages/cli      nativeloc CLI
 apps/server       Fastify + node:sqlite API, auth, queue, publish, device endpoints
 apps/web          React app: localizer workspace + admin
@@ -212,8 +262,10 @@ python -m unittest discover -s sdks/python
 ```
 
 Roles: **admin** (everything), **reviewer** (translate + approve, assigned languages),
-**localizer** (translate assigned languages). Admins invite people with a link; invitees
-choose a password and land in their queue.
+**localizer** (translate assigned languages; on projects with peer review on, review each other's work once
+**Trusted** in that language, or approve outright as a **Lead**).
+Admins invite people one at a time with an invite link, or share a reusable **volunteer sign-up link**:
+anyone with it picks a language from the link's list and joins as a localizer.
 
 ### Not in this MVP
 

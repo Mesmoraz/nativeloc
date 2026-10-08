@@ -171,3 +171,181 @@ describe('end to end', () => {
     expect(item.suggestions[0].score).toBeGreaterThan(90);
   });
 });
+
+describe('volunteers and peer review', () => {
+  const vols = ['ana@t.test', 'ben@t.test', 'cy@t.test'];
+  let code: string;
+  let keyId: number;
+
+  async function join(email: string, extra: Record<string, unknown> = {}) {
+    const res = await app.inject({ method: 'POST', url: `/api/v1/join/${code}`, payload: { name: email.split('@')[0], email, password: 'pw-12345678', locales: ['es'], ...extra } });
+    const c = res.cookies.find((x) => x.name === 'nl_sid');
+    if (c) cookies[email] = `nl_sid=${c.value}`;
+    return res;
+  }
+  const approve = (email: string) => app.inject({ method: 'POST', url: `/api/v1/translations/${keyId}/es/approve`, headers: as(email) });
+  const reviewQueue = async (email: string) =>
+    (await app.inject({ url: `/api/v1/projects/${projectId}/queue?locale=es&mode=review`, headers: as(email) })).json().items.map((i: { keyId: number }) => i.keyId);
+
+  beforeAll(async () => {
+    await app.inject({ method: 'POST', url: `/api/v1/projects/${projectId}/keys`, headers: bearer, payload: { entries: [{ key: 'thanks', source: 'Thank you!' }] } });
+    keyId = db.prepare("SELECT id FROM keys WHERE name = 'thanks'").get()!.id as number;
+  });
+
+  it('lets anyone with a join link sign up for its languages', async () => {
+    let res = await app.inject({ method: 'POST', url: '/api/v1/join-links', headers: as('loc@t.test'), payload: { locales: ['es'] } });
+    expect(res.statusCode).toBe(403);
+    res = await app.inject({ method: 'POST', url: '/api/v1/join-links', headers: as('admin@t.test'), payload: { locales: ['es'] } });
+    code = res.json().link.code;
+
+    res = await app.inject({ url: `/api/v1/join/${code}` });
+    expect(res.json()).toMatchObject({ org: 'Test', locales: ['es'], projects: ['Kiosk'], me: null });
+    expect((await join('ana@t.test', { locales: ['ja'] })).statusCode).toBe(400); // not offered by this link
+    for (const v of vols) expect((await join(v)).json().user).toMatchObject({ role: 'localizer', locales: ['es'] });
+    expect((await join('ana@t.test')).statusCode).toBe(409);
+  });
+
+  it('needs approvals from other volunteers once peer review is on', async () => {
+    // Off by default: localizers can't review.
+    expect((await approve('ben@t.test')).statusCode).toBe(403);
+    await app.inject({ method: 'PATCH', url: `/api/v1/projects/${projectId}`, headers: as('admin@t.test'), payload: { peerApprovals: 2 } });
+
+    // Volunteers from a sign-up link start as 'new': they translate, but can't review until placed.
+    expect((await app.inject({ url: `/api/v1/projects/${projectId}/queue?locale=es&mode=review`, headers: as('ben@t.test') })).statusCode).toBe(403);
+    for (const v of vols) {
+      const id = db.prepare('SELECT id FROM users WHERE email = ?').get(v)!.id;
+      const res = await app.inject({ method: 'PATCH', url: `/api/v1/users/${id}`, headers: as('admin@t.test'), payload: { tiers: { es: 'trusted' }, reason: 'vouched by partner org' } });
+      expect(res.json().user.tiers).toEqual({ es: 'trusted' });
+    }
+
+    let res = await app.inject({ method: 'PUT', url: `/api/v1/translations/${keyId}/es`, headers: as('ana@t.test'), payload: { text: '¡Gracias!' } });
+    expect(res.json().status).toBe('review');
+    expect(await reviewQueue('ana@t.test')).not.toContain(keyId); // never your own work
+    expect((await approve('ana@t.test')).statusCode).toBe(403);
+
+    expect(await reviewQueue('ben@t.test')).toContain(keyId);
+    expect((await approve('ben@t.test')).json()).toEqual({ status: 'review', approvals: { count: 1, needed: 2 } });
+    expect(await reviewQueue('ben@t.test')).not.toContain(keyId); // already approved by Ben
+
+    // Peers can't discard work; they improve it, which restarts the approvals under the new author.
+    expect((await app.inject({ method: 'POST', url: `/api/v1/translations/${keyId}/es/reject`, headers: as('cy@t.test') })).statusCode).toBe(403);
+    res = await app.inject({ method: 'PUT', url: `/api/v1/translations/${keyId}/es`, headers: as('cy@t.test'), payload: { text: '¡Muchas gracias!', approve: true } });
+    expect(res.json().status).toBe('review');
+    expect(await reviewQueue('ben@t.test')).toContain(keyId);
+
+    const projects = (await app.inject({ url: '/api/v1/projects', headers: as('ana@t.test') })).json().projects;
+    expect(projects[0].progress[0].reviewable).toBeGreaterThan(0);
+
+    expect((await approve('ana@t.test')).json().approvals).toEqual({ count: 1, needed: 2 });
+    expect((await approve('ben@t.test')).json()).toEqual({ status: 'approved', approvals: { count: 2, needed: 2 } });
+  });
+
+  it('adds languages to an existing account from a new link', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/v1/join-links', headers: as('admin@t.test'), payload: { locales: ['ja'] } });
+    code = res.json().link.code;
+    expect((await app.inject({ url: `/api/v1/join/${code}`, headers: as('ana@t.test') })).json().me).toMatchObject({ email: 'ana@t.test' });
+    const joined = await app.inject({ method: 'POST', url: `/api/v1/join/${code}`, headers: as('ana@t.test'), payload: { locales: ['ja'] } });
+    expect(joined.json().user.locales).toEqual(['es', 'ja']);
+    await app.inject({ method: 'DELETE', url: `/api/v1/join-links/${code}`, headers: as('admin@t.test') });
+    expect((await app.inject({ url: `/api/v1/join/${code}` })).statusCode).toBe(404);
+  });
+});
+
+describe('placement check', () => {
+  let code: string;
+  const items: Record<string, number> = {};
+
+  async function join(email: string) {
+    const res = await app.inject({ method: 'POST', url: `/api/v1/join/${code}`, payload: { name: email.split('@')[0], email, password: 'pw-12345678', locales: ['es'] } });
+    cookies[email] = `nl_sid=${res.cookies.find((x) => x.name === 'nl_sid')!.value}`;
+    return res.json().user;
+  }
+  const start = (email: string) => app.inject({ method: 'POST', url: '/api/v1/placement/es/start', headers: as(email) });
+  const submit = (email: string, attemptId: number, answers: unknown[]) =>
+    app.inject({ method: 'POST', url: `/api/v1/placement/attempts/${attemptId}/submit`, headers: as(email), payload: { answers } });
+  const answersFor = (attempt: { items: { itemId: number; kind: string }[] }, rightReviews: boolean) =>
+    attempt.items.map((i) =>
+      i.kind === 'translate'
+        ? { itemId: i.itemId, text: 'Una traducción' }
+        : { itemId: i.itemId, verdict: (i.itemId === items.bad1 || i.itemId === items.bad2) === rightReviews ? 'problem' : 'ok' },
+    );
+
+  beforeAll(async () => {
+    code = (await app.inject({ method: 'POST', url: '/api/v1/join-links', headers: as('admin@t.test'), payload: { locales: ['es'] } })).json().link.code;
+    const add = async (name: string, body: Record<string, unknown>) => {
+      const res = await app.inject({ method: 'POST', url: '/api/v1/placement-items', headers: as('admin@t.test'), payload: { locale: 'es', ...body } });
+      expect(res.statusCode).toBe(200);
+      items[name] = res.json().id;
+    };
+    await add('t1', { kind: 'translate', source: 'No ID is required.', reference: 'No se requiere identificación.' });
+    await add('t2', { kind: 'translate', source: 'We are open on Saturdays.', reference: 'Abrimos los sábados.' });
+    await add('ok1', { kind: 'review', source: 'Free groceries for anyone.', candidate: 'Alimentos gratis para cualquier persona.' });
+    await add('bad1', { kind: 'review', source: 'You can visit once a week.', candidate: 'Puede venir una vez al mes.', hasError: true, errorNote: 'week became month' });
+    await add('bad2', { kind: 'review', source: 'Do not share your password.', candidate: 'Comparta su contraseña.', hasError: true, errorNote: 'negation dropped' });
+  });
+
+  it('only lets admins write placement content, and requires the answer key', async () => {
+    expect((await app.inject({ method: 'POST', url: '/api/v1/placement-items', headers: as('rev@t.test'), payload: { locale: 'es', kind: 'translate', source: 'x', reference: 'y' } })).statusCode).toBe(403);
+    const res = await app.inject({ method: 'POST', url: '/api/v1/placement-items', headers: as('admin@t.test'), payload: { locale: 'es', kind: 'review', source: 'x', candidate: 'y', hasError: true } });
+    expect(res.statusCode).toBe(400);
+    expect((await app.inject({ url: '/api/v1/placement-items?locale=es', headers: as('admin@t.test') })).json().items).toHaveLength(5);
+  });
+
+  it('places a new volunteer as trusted after the auto-graded and human-graded parts pass', async () => {
+    const dee = await join('dee@t.test');
+    expect(dee.tiers).toEqual({ es: 'new' });
+    expect((await app.inject({ url: '/api/v1/placement/es', headers: as('dee@t.test') })).json()).toMatchObject({ tier: 'new', available: true, questions: 5, attempt: null });
+
+    const attempt = (await start('dee@t.test')).json().attempt;
+    expect(attempt.items.map((i: { kind: string }) => i.kind)).toEqual(['review', 'review', 'review', 'translate', 'translate']);
+    // The answer key never reaches the candidate.
+    expect(JSON.stringify(attempt)).not.toMatch(/reference|has_error|hasError|week became month|identificación/);
+    expect((await start('dee@t.test')).json().attempt.id).toBe(attempt.id); // resuming, not a new attempt
+
+    expect((await submit('dee@t.test', attempt.id, [])).statusCode).toBe(400);
+    expect((await submit('dee@t.test', attempt.id, answersFor(attempt, true))).json()).toEqual({ status: 'submitted' });
+
+    // Graders: reviewers or leads of the language, never the candidate, not ordinary trusted localizers.
+    expect((await app.inject({ url: '/api/v1/placement-grading', headers: as('loc@t.test') })).json().attempts).toEqual([]);
+    expect((await app.inject({ url: '/api/v1/placement-grading', headers: as('dee@t.test') })).json().attempts).toEqual([]);
+    const queue = (await app.inject({ url: '/api/v1/placement-grading', headers: as('rev@t.test') })).json().attempts;
+    expect(queue[0]).toMatchObject({ name: 'dee', review: { correct: 3, total: 3 }, reviewMisses: [] });
+    expect(queue[0].translations[0].reference).toBeTruthy();
+
+    const grades = queue[0].translations.map((t: { itemId: number }) => ({ itemId: t.itemId, pass: true }));
+    expect((await app.inject({ method: 'POST', url: `/api/v1/placement/attempts/${attempt.id}/grade`, headers: as('loc@t.test'), payload: { grades } })).statusCode).toBe(403);
+    const graded = await app.inject({ method: 'POST', url: `/api/v1/placement/attempts/${attempt.id}/grade`, headers: as('rev@t.test'), payload: { grades } });
+    expect(graded.json()).toMatchObject({ status: 'passed', review: { correct: 3, total: 3 }, translations: { accepted: 2, total: 2 } });
+
+    expect((await app.inject({ url: '/api/v1/me', headers: as('dee@t.test') })).json().user.tiers).toEqual({ es: 'trusted' });
+    expect((await app.inject({ url: `/api/v1/projects/${projectId}/queue?locale=es&mode=review`, headers: as('dee@t.test') })).statusCode).toBe(200);
+    expect((await start('dee@t.test')).statusCode).toBe(409);
+  });
+
+  it('fails a volunteer who misses the planted problems, with a wait before retrying', async () => {
+    await join('eli@t.test');
+    const attempt = (await start('eli@t.test')).json().attempt;
+    await submit('eli@t.test', attempt.id, answersFor(attempt, false));
+    const queued = (await app.inject({ url: '/api/v1/placement-grading', headers: as('rev@t.test') })).json().attempts[0];
+    const planted = queued.reviewMisses.map((m: { planted: string | null }) => m.planted);
+    expect(planted).toHaveLength(3);
+    expect(planted).toEqual(expect.arrayContaining(['negation dropped', 'week became month', null]));
+    const grades = queued.translations.map((t: { itemId: number }) => ({ itemId: t.itemId, pass: true }));
+    const res = await app.inject({ method: 'POST', url: `/api/v1/placement/attempts/${attempt.id}/grade`, headers: as('rev@t.test'), payload: { grades } });
+    expect(res.json()).toMatchObject({ status: 'failed', review: { correct: 0, total: 3 } });
+    expect((await app.inject({ url: '/api/v1/me', headers: as('eli@t.test') })).json().user.tiers).toEqual({ es: 'new' });
+    const retry = await start('eli@t.test');
+    expect(retry.statusCode).toBe(409);
+    expect(retry.json().error).toMatch(/try again after \d{4}-\d{2}-\d{2}/);
+  });
+
+  it('lets a lead approve outright, even on a peer-review project', async () => {
+    const eli = db.prepare("SELECT id FROM users WHERE email = 'eli@t.test'").get()!.id;
+    await app.inject({ method: 'PATCH', url: `/api/v1/users/${eli}`, headers: as('admin@t.test'), payload: { tiers: { es: 'lead' } } });
+    await app.inject({ method: 'POST', url: `/api/v1/projects/${projectId}/keys`, headers: bearer, payload: { entries: [{ key: 'bye', source: 'Goodbye' }] } });
+    const keyId = db.prepare("SELECT id FROM keys WHERE name = 'bye'").get()!.id;
+    await app.inject({ method: 'PUT', url: `/api/v1/translations/${keyId}/es`, headers: as('dee@t.test'), payload: { text: 'Adiós' } });
+    const res = await app.inject({ method: 'POST', url: `/api/v1/translations/${keyId}/es/approve`, headers: as('eli@t.test') });
+    expect(res.json()).toEqual({ status: 'approved' });
+  });
+});

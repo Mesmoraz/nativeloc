@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { HttpError, projectAccess, requireUser } from '../auth.js';
 import { all, get, run, type DB, type KeyRow } from '../db.js';
-import { queue, saveTranslation } from '../services.js';
+import { approveTranslation, queue, saveTranslation } from '../services.js';
 import { checkLocale, intParam } from '../util.js';
 
 function keyProject(db: DB, keyId: number) {
@@ -16,8 +16,9 @@ export function localizeRoutes(app: FastifyInstance, db: DB) {
     async (req) => {
       const locale = checkLocale(req.query.locale);
       const mode = req.query.mode === 'review' ? 'review' : 'translate';
-      const { project } = projectAccess(db, req, intParam(req.params.id), mode, locale);
+      const { project, actor } = projectAccess(db, req, intParam(req.params.id), mode, locale);
       return queue(db, project, locale, mode, {
+        viewer: actor.kind === 'user' ? actor.user : undefined,
         limit: Number(req.query.limit) || undefined,
         exclude: (req.query.exclude ?? '').split(',').filter(Boolean).map(Number),
         keyId: req.query.keyId ? intParam(req.query.keyId) : undefined,
@@ -34,22 +35,26 @@ export function localizeRoutes(app: FastifyInstance, db: DB) {
     return saveTranslation(db, project, actor.user, key.id, locale, req.body.text, !!req.body.approve);
   });
 
-  /** Approve as-is (reviewers). */
+  /** Approve as-is: reviewers approve outright; with peer review on, a localizer's approval is one vote. */
   app.post<{ Params: { keyId: string; locale: string } }>('/api/v1/translations/:keyId/:locale/approve', async (req) => {
     const locale = checkLocale(req.params.locale);
     const key = keyProject(db, intParam(req.params.keyId));
-    const { actor } = projectAccess(db, req, key.project_id, 'review', locale);
-    const r = run(db, "UPDATE translations SET status = 'approved', updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE key_id = ? AND locale = ?", actor.kind === 'user' ? actor.user.id : null, key.id, locale);
-    if (!r.changes) throw new HttpError(404, 'Nothing to approve yet.');
-    return { status: 'approved' };
+    const { project, actor } = projectAccess(db, req, key.project_id, 'review', locale);
+    if (actor.kind !== 'user') throw new HttpError(403, 'Sign in to review.');
+    return approveTranslation(db, project, actor.user, key.id, locale);
   });
 
-  /** Send back to the translator queue (reviewers). */
+  /**
+   * Send back to the translator queue (reviewers). Peers can't: one person shouldn't be able to
+   * discard others' work. They improve the text instead, which resubmits it for review.
+   */
   app.post<{ Params: { keyId: string; locale: string } }>('/api/v1/translations/:keyId/:locale/reject', async (req) => {
     const locale = checkLocale(req.params.locale);
     const key = keyProject(db, intParam(req.params.keyId));
-    projectAccess(db, req, key.project_id, 'review', locale);
+    const { actor } = projectAccess(db, req, key.project_id, 'review', locale);
+    if (actor.kind !== 'user' || actor.user.role === 'localizer') throw new HttpError(403, 'Only reviewers can send translations back. Improve the text instead.');
     run(db, "UPDATE translations SET status = 'outdated' WHERE key_id = ? AND locale = ?", key.id, locale);
+    run(db, 'DELETE FROM votes WHERE key_id = ? AND locale = ?', key.id, locale);
     return { status: 'outdated' };
   });
 

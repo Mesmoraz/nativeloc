@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS projects (
   source_locale TEXT NOT NULL,
   bundle_token TEXT NOT NULL UNIQUE,
   require_review INTEGER NOT NULL DEFAULT 1,
+  peer_approvals INTEGER NOT NULL DEFAULT 0,
   version INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -75,6 +76,70 @@ CREATE TABLE IF NOT EXISTS translations (
   updated_by INTEGER REFERENCES users(id),
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (key_id, locale)
+);
+-- Peer review: approvals of the current text by people other than its author. Cleared when the text changes.
+CREATE TABLE IF NOT EXISTS votes (
+  key_id INTEGER NOT NULL REFERENCES keys(id) ON DELETE CASCADE,
+  locale TEXT NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (key_id, locale, user_id)
+);
+-- Reusable sign-up links for volunteers. Anyone with the link joins as a localizer.
+CREATE TABLE IF NOT EXISTS join_links (
+  code TEXT PRIMARY KEY,
+  org_id INTEGER NOT NULL REFERENCES orgs(id),
+  locales TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  disabled_at TEXT
+);
+-- Trust per language. No row means the default for the role (see tierOf): people an admin
+-- invited are vetted already; volunteers from a sign-up link start as 'new'.
+CREATE TABLE IF NOT EXISTS user_languages (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  locale TEXT NOT NULL,
+  tier TEXT NOT NULL CHECK (tier IN ('new', 'trusted', 'lead')),
+  reason TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, locale)
+);
+-- Placement check content. 'translate': write a translation, a grader compares it with the reference.
+-- 'review': judge the candidate translation; has_error says whether a problem was planted (graded automatically).
+CREATE TABLE IF NOT EXISTS placement_items (
+  id INTEGER PRIMARY KEY,
+  org_id INTEGER NOT NULL REFERENCES orgs(id),
+  locale TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('translate', 'review')),
+  source TEXT NOT NULL,
+  reference TEXT,
+  candidate TEXT,
+  has_error INTEGER NOT NULL DEFAULT 0,
+  error_note TEXT,
+  archived INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS placement_attempts (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  locale TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('in_progress', 'submitted', 'passed', 'failed')),
+  review_correct INTEGER,
+  review_total INTEGER,
+  graded_by INTEGER REFERENCES users(id),
+  started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  submitted_at TEXT,
+  graded_at TEXT
+);
+CREATE TABLE IF NOT EXISTS placement_answers (
+  attempt_id INTEGER NOT NULL REFERENCES placement_attempts(id) ON DELETE CASCADE,
+  item_id INTEGER NOT NULL REFERENCES placement_items(id),
+  position INTEGER NOT NULL,
+  text TEXT,
+  verdict TEXT CHECK (verdict IN ('ok', 'problem')),
+  explanation TEXT,
+  correct INTEGER,
+  grader_note TEXT,
+  PRIMARY KEY (attempt_id, item_id)
 );
 CREATE TABLE IF NOT EXISTS screenshots (
   id INTEGER PRIMARY KEY,
@@ -130,7 +195,14 @@ export function openDb(path: string): DB {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+/** Columns added after a table was first shipped; CREATE TABLE IF NOT EXISTS won't add them to old databases. */
+function migrate(db: DB) {
+  const cols = (table: string) => new Set(all<{ name: string }>(db, `PRAGMA table_info(${table})`).map((c) => c.name));
+  if (!cols('projects').has('peer_approvals')) db.exec('ALTER TABLE projects ADD COLUMN peer_approvals INTEGER NOT NULL DEFAULT 0');
 }
 
 type Param = string | number | bigint | null | Uint8Array;
@@ -173,6 +245,7 @@ export interface ProjectRow {
   source_locale: string;
   bundle_token: string;
   require_review: number;
+  peer_approvals: number;
   version: number;
 }
 export interface KeyRow {
@@ -191,4 +264,5 @@ export interface TranslationRow {
   locale: string;
   text: string;
   status: 'outdated' | 'review' | 'approved';
+  updated_by: number | null;
 }

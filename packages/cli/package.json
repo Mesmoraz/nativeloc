@@ -6,6 +6,7 @@
   "bin": { "nativeloc": "bin/nativeloc.js" },
   "dependencies": {
     "@nativeloc/core": "*",
+    "@nativeloc/site": "*",
     "tsx": "^4.19.2"
   }
 }

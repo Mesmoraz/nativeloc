@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { detectFormat, getAdapter } from '@nativeloc/core';
+import { crawl as crawlSite, siteEntries } from '@nativeloc/site';
 
 interface FileConfig {
   /** Source-language file, e.g. app/src/main/res/values/strings.xml */
@@ -27,6 +28,9 @@ Usage:
              [--boxes '[{"key":"checkout","x":10,"y":20,"w":200,"h":60}]']
                                           Attach a device screenshot so localizers see context
   nativeloc publish                       Publish a new version to devices
+  nativeloc crawl <https://site> [--max-pages 30] [--dry-run] [--out site.json] [--prune]
+                                          Read a website (help pages first) and upload its text.
+                                          --dry-run only reports pages, strings and word counts.
 
 Options:
   --config <file>   Config file (default: nativeloc.config.json)
@@ -44,6 +48,9 @@ const { values: opts, positionals } = parseArgs({
     label: { type: 'string' },
     keys: { type: 'string' },
     boxes: { type: 'string' },
+    'max-pages': { type: 'string', default: '30' },
+    'dry-run': { type: 'boolean', default: false },
+    out: { type: 'string' },
     help: { type: 'boolean', short: 'h' },
   },
 });
@@ -156,6 +163,44 @@ async function publish() {
   console.log(`✔ Published version ${r.manifest.version}: ${summary}`);
 }
 
+/** Rough pace for a volunteer translating and checking website text; used only for planning estimates. */
+const WORDS_PER_HOUR = 250;
+
+async function crawl() {
+  const start = rest[0] ?? fail('Pass the site address: nativeloc crawl https://example.org');
+  const maxPages = Number(opts['max-pages']);
+  if (!Number.isInteger(maxPages) || maxPages < 1) fail('--max-pages must be a positive whole number.');
+  // Check config and token before spending minutes reading the site.
+  const cfg = opts['dry-run'] ? null : loadConfig();
+  if (cfg) token();
+
+  console.log(`Reading ${start} (up to ${maxPages} pages, help pages first)…`);
+  const result = await crawlSite(start, {
+    maxPages,
+    onPage: (p, i) => console.log(`  ${String(i).padStart(3)}. ${p.path}  ${p.segments.length} strings${p.priority > 0 ? '  ★' : ''}`),
+  });
+  const { entries, summary } = siteEntries(result.pages);
+  const hours = (words: number) => Math.max(0.5, Math.round((words / WORDS_PER_HOUR) * 2) / 2);
+  console.log(`
+✔ ${summary.pages} pages · ${summary.strings} distinct strings · ${summary.words} words
+  ★ Help pages: ${summary.priorityWords} words (≈ ${hours(summary.priorityWords)} volunteer-hours per language)
+  Whole crawl: ≈ ${hours(summary.words)} volunteer-hours per language`);
+  if (result.documents.length) console.log(`  ${result.documents.length} linked documents (PDF/Word) not included, e.g. ${result.documents.slice(0, 3).join(', ')}`);
+  if (result.disallowed.length) console.log(`  ${result.disallowed.length} pages skipped because robots.txt asks crawlers not to read them`);
+  if (result.errors.length) console.log(`  ${result.errors.length} pages could not be read, e.g. ${result.errors[0].url} (${result.errors[0].error})`);
+
+  if (opts.out) {
+    writeFileSync(opts.out, JSON.stringify({ start, summary, documents: result.documents, entries }, null, 2) + '\n');
+    console.log(`✔ Wrote ${opts.out}`);
+  }
+  if (!cfg) return;
+  const r = await call<{ created: number; updated: number; unchanged: number; archived: number }>(cfg, `/api/v1/projects/${cfg.projectId}/keys`, {
+    method: 'POST',
+    body: JSON.stringify({ entries, prune: opts.prune }),
+  });
+  console.log(`✔ Uploaded: ${r.created} new, ${r.updated} changed, ${r.unchanged} unchanged${r.archived ? `, ${r.archived} archived` : ''}`);
+}
+
 function init() {
   if (existsSync(opts.config!)) fail(`${opts.config} already exists.`);
   const guess = existsSync('app/src/main/res/values/strings.xml')
@@ -166,7 +211,7 @@ function init() {
   console.log(`✔ Wrote ${opts.config}. Set "projectId" (see the project URL) and NATIVELOC_TOKEN, then run "nativeloc push".`);
 }
 
-const commands: Record<string, () => unknown> = { init, push, pull, screenshot, publish };
+const commands: Record<string, () => unknown> = { init, push, pull, screenshot, publish, crawl };
 if (opts.help || !command || !commands[command]) {
   console.log(HELP);
   process.exit(command && !opts.help ? 1 : 0);

@@ -29,7 +29,11 @@ export interface User {
   name: string;
   role: 'admin' | 'reviewer' | 'localizer';
   locales: string[];
+  /** Trust per language: 'new' volunteers translate; 'trusted' approvals count; a 'lead' approval is final. */
+  tiers: Record<string, Tier>;
 }
+
+export type Tier = 'new' | 'trusted' | 'lead';
 
 export interface Project {
   id: number;
@@ -37,6 +41,8 @@ export interface Project {
   sourceLocale: string;
   locales: string[];
   requireReview: boolean;
+  /** 0 = reviewers approve. N > 0 = localizers review each other; N approvals from others ship a translation. */
+  peerApprovals: number;
   version: number;
   bundleToken: string;
   progress: LocaleProgressLike[];
@@ -57,12 +63,21 @@ export interface QueueItem {
   screenshot: { id: number; url: string; label: string | null; width: number; height: number; box: { x: number; y: number; w: number; h: number } | null } | null;
   suggestions: { source: string; text: string; score: number }[];
   questions: { id: number; text: string; answer: string | null; user: string }[];
+  approvals: { count: number; needed: number } | null;
 }
 
 export interface QueueResponse {
-  project: { id: number; name: string; sourceLocale: string };
+  project: { id: number; name: string; sourceLocale: string; peerApprovals: number };
   locale: string;
   mode: 'translate' | 'review';
   progress?: LocaleProgressLike;
   items: QueueItem[];
+}
+
+export interface JoinLink {
+  code: string;
+  path: string;
+  locales: string[];
+  createdAt: string;
+  active: boolean;
 }

@@ -9,6 +9,8 @@ import { Invite } from './pages/Invite';
 import { Join } from './pages/Join';
 import { Login } from './pages/Login';
 import { Placement } from './pages/Placement';
+import { isMock } from './volunteer/client';
+import { VolunteerApp } from './volunteer/VolunteerApp';
 
 interface Session {
   user: User;
@@ -71,11 +73,14 @@ export function App() {
       <Routes>
         <Route path="/invite/:token" element={<Invite />} />
         <Route path="/join/:code" element={<Join />} />
+        {/* The dev mock (?mock=1) runs the card flow without signing in. */}
+        {isMock && <Route path="/v" element={<VolunteerApp />} />}
         {!session ? (
           <Route path="*" element={<Login />} />
         ) : (
           <>
             <Route path="/" element={<Home />} />
+            <Route path="/v" element={<VolunteerApp />} />
             <Route path="/p/:projectId/:locale/:mode" element={<Workspace />} />
             <Route path="/placement/:locale" element={<Placement />} />
             <Route path="/grading" element={<Grading />} />

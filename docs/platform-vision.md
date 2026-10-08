@@ -205,6 +205,8 @@ alongside it.
 
 ### Segment 1: Volunteer cards on phones
 
+Build spec: [segment-1-volunteer-cards.md](segment-1-volunteer-cards.md).
+
 **Goal:** prove that people will translate in short sessions on a phone, and that accepted-only XP keeps
 quality up.
 
@@ -220,6 +222,8 @@ quality up.
 rate, strings per session, and the share of strings accepted.
 
 ### Segment 2: Open sign-up and the community tier
+
+Detailed plan: [segment-2-open-signup.md](segment-2-open-signup.md).
 
 **Goal:** anyone can join, as a volunteer, a requester, or both.
 

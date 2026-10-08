@@ -220,7 +220,7 @@ describe('volunteer sessions', () => {
     const s = await session('peer@s.test', 6);
     expect(s.empty).toBeNull();
     expect(types(s)).toBe('TRTRTR');
-    expect(s.cards[0]).toMatchObject({ id: `translate:${s.cards[0].item.keyId}:es`, type: 'translate', project: { id: peer, name: 'Peer' }, locale: 'es', item: { key: 't0', current: null } });
+    expect(s.cards[0]).toMatchObject({ id: `translate:${s.cards[0].item.keyId}:es`, type: 'translate', project: { id: peer, name: 'Peer', sourceLocale: 'en' }, locale: 'es', item: { key: 't0', current: null } });
     expect(s.cards[1]).toMatchObject({ type: 'review', item: { keyId: review[0], current: { status: 'review' }, approvals: { count: 0, needed: 2 } } });
     // Queue order within each kind; only languages the volunteer has.
     expect(s.cards.filter((c: { type: string }) => c.type === 'translate').map((c: { item: { key: string } }) => c.item.key)).toEqual(['t0', 't1', 't2']);

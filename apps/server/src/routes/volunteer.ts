@@ -11,7 +11,7 @@ type Item = ReturnType<typeof queue>['items'][number];
 interface Card {
   id: string;
   type: 'translate' | 'review';
-  project: { id: number; name: string };
+  project: { id: number; name: string; sourceLocale: string };
   locale: string;
   item: Item;
 }
@@ -35,7 +35,7 @@ export function buildSession(db: DB, user: UserRow, size: number): { cards: Card
   const deal = (type: Card['type'], project: ProjectRow, locale: string) => {
     if (piles[type].length >= size) return;
     const { items } = queue(db, project, locale, type, { viewer: user, limit: size - piles[type].length });
-    for (const item of items) piles[type].push({ id: `${type}:${item.keyId}:${locale}`, type, project: { id: project.id, name: project.name }, locale, item });
+    for (const item of items) piles[type].push({ id: `${type}:${item.keyId}:${locale}`, type, project: { id: project.id, name: project.name, sourceLocale: project.source_locale }, locale, item });
   };
   for (const project of all<ProjectRow>(db, 'SELECT * FROM projects WHERE org_id = ? ORDER BY id', user.org_id)) {
     const offered = projectLocales(db, project.id);

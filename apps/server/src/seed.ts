@@ -6,6 +6,7 @@
  *   lucas@demo.test   / demo-reviewer-pass   reviewer   es, fr
  *   maria@demo.test   / demo-localizer-pass  localizer  es
  *   yuki@demo.test    / demo-localizer-pass  localizer  ja
+ *   sam@demo.test     / demo-localizer-pass  localizer  es, fr   (volunteer; has work waiting for peer review)
  *
  * CLI / REST push token for the "FreshMart Kiosk" project: nl_demo_kiosk_push_token
  * Volunteer sign-up link (Spanish, French; the kiosk uses peer review): /join/demo-volunteers
@@ -14,8 +15,8 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hashPassword, sha256 } from './auth.js';
-import { get, openDb, run, type ProjectRow } from './db.js';
-import { importFile, publish, saveTranslation } from './services.js';
+import { get, openDb, run, type ProjectRow, type UserRow } from './db.js';
+import { importFile, publish, saveTranslation, upsertEntries } from './services.js';
 
 const root = resolve(fileURLToPath(import.meta.url), '../../../..');
 const dataDir = resolve(process.env.NATIVELOC_DATA ?? resolve(root, 'data'));
@@ -40,6 +41,7 @@ user('admin@demo.test', 'Avery Admin', 'demo-admin-pass', 'admin', []);
 const lucas = user('lucas@demo.test', 'Lucas Ortega', 'demo-reviewer-pass', 'reviewer', ['es', 'fr']);
 user('maria@demo.test', 'María López', 'demo-localizer-pass', 'localizer', ['es']);
 user('yuki@demo.test', 'Yuki Tanaka', 'demo-localizer-pass', 'localizer', ['ja']);
+const sam = user('sam@demo.test', 'Sam Rivera', 'demo-localizer-pass', 'localizer', ['es', 'fr']);
 
 function project(name: string, token: string, locales: string[]): ProjectRow {
   const id = Number(run(db, "INSERT INTO projects (org_id, name, source_locale, bundle_token) VALUES (?, ?, 'en', ?)", orgId, name, token).lastInsertRowid);
@@ -50,15 +52,40 @@ function project(name: string, token: string, locales: string[]): ProjectRow {
 const kiosk = project('FreshMart Kiosk (Android)', 'pb_demo_kiosk', ['es', 'fr', 'ja', 'ru']);
 const scale = project('Produce Scale (Linux)', 'pb_demo_scale', ['es', 'pl']);
 const signage = project('Store Signage (web player)', 'pb_demo_signage', ['es', 'fr']);
+const pantry = project('Community Pantry (volunteer app)', 'pb_demo_pantry', ['es', 'fr']);
 
 const example = (p: string) => readFileSync(resolve(root, 'examples', p), 'utf8');
 importFile(db, kiosk, example('android/res/values/strings.xml'), 'android-xml', {});
 importFile(db, scale, example('linux/messages.pot'), 'po', {});
 importFile(db, signage, example('json/en.json'), 'json', {});
 
+// Short, everyday strings so volunteers have several 5-card sessions of work in Spanish and French.
+upsertEntries(db, pantry, [
+  { key: 'home.title', source: 'Find food near you', description: 'Home screen heading', maxLength: 32 },
+  { key: 'home.search', source: 'Search by ZIP code', description: 'Placeholder in the search box' },
+  { key: 'home.open_now', source: 'Open now', description: 'Filter chip' },
+  { key: 'pantry.hours', source: 'Open {days}, {start} to {end}', description: 'e.g. "Open Mon–Fri, 9 AM to 5 PM"' },
+  { key: 'pantry.no_id', source: 'No ID needed', description: 'Badge on a pantry card' },
+  { key: 'pantry.walk_in', source: 'Walk-ins welcome', description: 'Badge on a pantry card' },
+  { key: 'pantry.distance', source: '{count, plural, one {# mile away} other {# miles away}}' },
+  { key: 'pantry.directions', source: 'Get directions', description: 'Button' },
+  { key: 'pantry.call', source: 'Call', description: 'Button that dials the pantry' },
+  { key: 'visit.bring_bags', source: 'Bring your own bags if you can.' },
+  { key: 'visit.limit', source: 'You can visit once a week.' },
+  { key: 'visit.fresh', source: 'Fresh produce arrives every Tuesday.' },
+  { key: 'visit.delivery', source: 'Need a home delivery? Call us and we will set it up.' },
+  { key: 'visit.kids', source: 'Kids under 18 eat free all summer.' },
+  { key: 'help.languages', source: 'Volunteers here speak {languages}.', description: 'A list of language names' },
+  { key: 'help.privacy', source: 'We never share your information.', description: 'Shown above the sign-up form' },
+  { key: 'signup.name', source: 'Your name', description: 'Form label' },
+  { key: 'signup.household', source: 'People in your household', description: 'Form label, followed by a number' },
+  { key: 'signup.submit', source: 'Sign up', description: 'Button', maxLength: 16 },
+  { key: 'signup.thanks', source: 'Thanks, {name}! See you soon.' },
+]);
+
 // Volunteers can sign themselves up, and on the kiosk two of them approving a translation ships it.
 run(db, "INSERT INTO join_links (code, org_id, locales) VALUES ('demo-volunteers', ?, ?)", orgId, JSON.stringify(['es', 'fr']));
-run(db, 'UPDATE projects SET peer_approvals = 2 WHERE id = ?', kiosk.id);
+run(db, 'UPDATE projects SET peer_approvals = 2 WHERE id IN (?, ?)', kiosk.id, pantry.id);
 
 // Spanish placement check. Volunteers from the sign-up link take it before their reviews count.
 const placement = (kind: 'translate' | 'review', source: string, text: string, problem?: string) =>
@@ -110,8 +137,28 @@ approve(kiosk, 'fr', {
 approve(signage, 'es', { 'menu.title': 'Ofertas de hoy' });
 approve(scale, 'es', { 'Place item on the scale': 'Coloque el producto en la báscula' });
 
+// Sam has translated a few pantry strings that are waiting for two other volunteers (Review cards for María),
+// so his XP shows as pending until they approve.
+const samRow = get<UserRow>(db, 'SELECT * FROM users WHERE id = ?', sam)!;
+const pantryRow = get<ProjectRow>(db, 'SELECT * FROM projects WHERE id = ?', pantry.id)!;
+const submit = (locale: string, strings: Record<string, string>) => {
+  for (const [name, text] of Object.entries(strings)) saveTranslation(db, pantryRow, samRow, keyId(pantry, name), locale, text, false);
+};
+submit('es', {
+  'home.title': 'Encuentre comida cerca de usted',
+  'home.open_now': 'Abierto ahora',
+  'pantry.no_id': 'No se necesita identificación',
+  'pantry.directions': 'Cómo llegar',
+  'signup.name': 'Su nombre',
+});
+submit('fr', {
+  'home.title': 'De la nourriture près de chez vous',
+  'home.open_now': 'Ouvert maintenant',
+  'pantry.call': 'Appeler',
+});
+
 // Publish v1 of every project so devices have bundles to download immediately.
-for (const p of [kiosk, scale, signage]) publish(db, get<ProjectRow>(db, 'SELECT * FROM projects WHERE id = ?', p.id)!);
+for (const p of [kiosk, scale, signage, pantry]) publish(db, get<ProjectRow>(db, 'SELECT * FROM projects WHERE id = ?', p.id)!);
 
 console.log(`
 Seeded ${dbPath}
@@ -123,6 +170,7 @@ Seeded ${dbPath}
   lucas@demo.test  / demo-reviewer-pass    reviewer   es, fr
   maria@demo.test  / demo-localizer-pass   localizer  es
   yuki@demo.test   / demo-localizer-pass   localizer  ja
+  sam@demo.test    / demo-localizer-pass   localizer  es, fr
 
   Push token (CLI / kiosk capture): nl_demo_kiosk_push_token
   Volunteer sign-up: http://localhost:5173/join/demo-volunteers

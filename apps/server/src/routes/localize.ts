@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { HttpError, projectAccess, requireUser } from '../auth.js';
-import { all, get, run, type DB, type KeyRow } from '../db.js';
+import { all, get, run, tx, type DB, type KeyRow } from '../db.js';
 import { approveTranslation, queue, saveTranslation } from '../services.js';
 import { checkLocale, intParam } from '../util.js';
+import { voidPending } from '../xp.js';
 
 function keyProject(db: DB, keyId: number) {
   const key = get<KeyRow>(db, 'SELECT * FROM keys WHERE id = ?', keyId);
@@ -53,8 +54,12 @@ export function localizeRoutes(app: FastifyInstance, db: DB) {
     const key = keyProject(db, intParam(req.params.keyId));
     const { actor } = projectAccess(db, req, key.project_id, 'review', locale);
     if (actor.kind !== 'user' || actor.user.role === 'localizer') throw new HttpError(403, 'Only reviewers can send translations back. Improve the text instead.');
-    run(db, "UPDATE translations SET status = 'outdated' WHERE key_id = ? AND locale = ?", key.id, locale);
-    run(db, 'DELETE FROM votes WHERE key_id = ? AND locale = ?', key.id, locale);
+    tx(db, () => {
+      run(db, "UPDATE translations SET status = 'outdated' WHERE key_id = ? AND locale = ?", key.id, locale);
+      run(db, 'DELETE FROM votes WHERE key_id = ? AND locale = ?', key.id, locale);
+      // Pending XP on the string goes with it; anything already accepted stays.
+      voidPending(db, { projectId: key.project_id, keyId: key.id, locale });
+    });
     return { status: 'outdated' };
   });
 

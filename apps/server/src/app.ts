@@ -11,6 +11,7 @@ import { bundleRoutes } from './routes/bundles.js';
 import { localizeRoutes } from './routes/localize.js';
 import { placementRoutes } from './routes/placement.js';
 import { projectRoutes } from './routes/projects.js';
+import { volunteerRoutes } from './routes/volunteer.js';
 
 export interface AppOptions {
   dbPath: string;
@@ -41,6 +42,7 @@ export async function buildApp(opts: AppOptions) {
   projectRoutes(app, { db, screenshotDir });
   localizeRoutes(app, db);
   placementRoutes(app, db);
+  volunteerRoutes(app, db);
   bundleRoutes(app, db);
 
   if (opts.webDist && existsSync(opts.webDist)) {

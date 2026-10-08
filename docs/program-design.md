@@ -44,8 +44,8 @@ eligibility and benefit rules. Peer approval alone isn't enough for these. This 
 ## 2. Getting it done fast
 
 - **Make the work tiny.** One sentence at a time, on a phone, with "5 strings in 5 minutes" sessions. The
-  queue already serves one string at a time with context. The next step is a mobile-first PWA with push
-  notifications; a native app isn't needed.
+  queue already serves one string at a time with context. The next step is a mobile-first PWA, then a
+  native iOS and Android app with push notifications (see [platform-vision.md](platform-vision.md) §6).
 - **Time-boxed campaigns, not an endless queue.** For example: "Get Rainier Valley Food Bank's help pages
   live in Somali by Friday." Each language team shares a progress bar, there's a clear finish line, and
   the launch is announced to the volunteers who did it.
@@ -82,6 +82,10 @@ On timeliness:
 - **Pilot first.** Five organizations, with before/after case studies (visits by language, coverage).
 
 ## 4. Is it a gamified app?
+
+> **Update:** [platform-vision.md](platform-vision.md) §4 adopts a Duolingo-style app (XP, streaks, badges,
+> opt-in leagues and org leaderboards). It keeps the concerns below by awarding XP only when work is
+> *accepted* by reviewers, never when it is submitted, and by keeping public rankings opt-in.
 
 **Light motivation design, not a game.** Points-per-string leaderboards reward speed over care. They
 invite gaming the review system and can put off the older native speakers we most need, especially for

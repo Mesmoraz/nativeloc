@@ -8,8 +8,8 @@ import type { Card, StatsResponse } from './types';
 import { XP } from './types';
 
 const LOCALE = 'es';
-const FOOD_BANK = { id: 1, name: 'Riverside Food Bank' };
-const TENANTS = { id: 2, name: 'Tenant Help Line' };
+const FOOD_BANK = { id: 1, name: 'Riverside Food Bank', sourceLocale: 'en' };
+const TENANTS = { id: 2, name: 'Tenant Help Line', sourceLocale: 'en' };
 
 /** A fake phone screen with one line highlighted, so the screenshot view has something real to show. */
 function shot(id: number, title: string, lines: string[], highlight: number): QueueItem['screenshot'] {
@@ -114,7 +114,7 @@ const rotate = <T,>(a: T[], n: number) => a.map((_, i) => a[(i + n) % a.length])
 function award(points: number, status: 'pending' | 'accepted', project: typeof FOOD_BANK) {
   stats.xp[status] += points;
   stats.today[status] += points;
-  if (status === 'accepted' && !stats.projectsHelped.some((p) => p.id === project.id)) stats.projectsHelped.push(project);
+  if (status === 'accepted' && !stats.projectsHelped.some((p) => p.id === project.id)) stats.projectsHelped.push({ id: project.id, name: project.name });
   return { points, status };
 }
 

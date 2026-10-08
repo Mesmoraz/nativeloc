@@ -7,9 +7,6 @@ import { languageName, nativeLanguageName, textDirection } from '../types';
 import type { VolunteerClient } from './client';
 import type { Card, XpAward } from './types';
 
-/** The contract doesn't carry the project's source language yet; every Segment 1 project is English-source. */
-const SOURCE_LOCALE = 'en';
-
 export interface CardResult {
   outcome: 'done' | 'skipped';
   xp: XpAward['xp'];
@@ -50,15 +47,15 @@ function CardHead({ card, kind }: { card: Card; kind: string }) {
   );
 }
 
-function SourceBlock({ item }: { item: QueueItem }) {
+function SourceBlock({ item, source }: { item: QueueItem; source: string }) {
   const src = item.sourceModel;
   return (
-    <section className="v-source" aria-label={`${languageName(SOURCE_LOCALE)} original`}>
-      <div className="label-row">{languageName(SOURCE_LOCALE)}</div>
+    <section className="v-source" aria-label={`${languageName(source)} original`}>
+      <div className="label-row">{languageName(source)}</div>
       {src.kind === 'plural' ? (
         Object.entries(src.forms).map(([cat, f]) => (
           <p key={cat} className="v-source-text">
-            <ChipText text={f} placeholders={item.placeholders} pound num={sourceExample(cat, SOURCE_LOCALE)} locale={SOURCE_LOCALE} />
+            <ChipText text={f} placeholders={item.placeholders} pound num={sourceExample(cat, source)} locale={source} />
           </p>
         ))
       ) : (
@@ -119,11 +116,11 @@ function ShotZoom({ shot }: { shot: NonNullable<QueueItem['screenshot']> }) {
 }
 
 /** The translation boxes: placeholder chips, one box per plural form, live checks and the server's 422 issues. */
-function Editor({ item, locale, model, setModel, issues, note }: { item: QueueItem; locale: string; model: EditorModel; setModel: (m: EditorModel) => void; issues: Issue[]; note?: string }) {
+function Editor({ item, source, locale, model, setModel, issues, note }: { item: QueueItem; source: string; locale: string; model: EditorModel; setModel: (m: EditorModel) => void; issues: Issue[]; note?: string }) {
   const focused = useRef<{ el: HTMLTextAreaElement; form: string | null } | null>(null);
   const firstInput = useRef<HTMLTextAreaElement | null>(null);
   const dir = textDirection(locale);
-  const sourceName = languageName(SOURCE_LOCALE);
+  const sourceName = languageName(source);
 
   function insert(token: string) {
     const target = focused.current ?? (firstInput.current ? { el: firstInput.current, form: model.kind === 'plural' ? Object.keys(model.forms)[0] : null } : null);
@@ -171,7 +168,7 @@ function Editor({ item, locale, model, setModel, issues, note }: { item: QueueIt
                 <span className="cat">{lab.title}</span>
               </div>
               <div className="ref" dir="ltr">
-                {sourceName}: <ChipText text={sourceFormFor(item.sourceModel, cat)} placeholders={item.placeholders} pound num={lab.example} locale={SOURCE_LOCALE} />
+                {sourceName}: <ChipText text={sourceFormFor(item.sourceModel, cat)} placeholders={item.placeholders} pound num={lab.example} locale={source} />
               </div>
               <textarea
                 {...noGrammarly}
@@ -276,9 +273,9 @@ export function TranslateCard({ card, client, onDone }: CardProps) {
     <>
       <div className="v-body">
         <CardHead card={card} kind="Translate" />
-        <SourceBlock item={card.item} />
+        <SourceBlock item={card.item} source={card.project.sourceLocale} />
         <Context item={card.item} />
-        <Editor item={card.item} locale={card.locale} model={t.model} setModel={t.setModel} issues={t.issues} note={t.note} />
+        <Editor item={card.item} source={card.project.sourceLocale} locale={card.locale} model={t.model} setModel={t.setModel} issues={t.issues} note={t.note} />
       </div>
       <div className="v-actions">
         <button className="v-btn ghost" onClick={() => onDone({ outcome: 'skipped', xp: null })} disabled={t.saving}>
@@ -321,10 +318,10 @@ export function ReviewCard({ card, client, onDone }: CardProps) {
     <>
       <div className="v-body">
         <CardHead card={card} kind="Review" />
-        <SourceBlock item={item} />
+        <SourceBlock item={item} source={card.project.sourceLocale} />
         <Context item={item} />
         {improving ? (
-          <Editor item={item} locale={locale} model={t.model} setModel={t.setModel} issues={t.issues} note={t.note} />
+          <Editor item={item} source={card.project.sourceLocale} locale={locale} model={t.model} setModel={t.setModel} issues={t.issues} note={t.note} />
         ) : (
           <section className="v-translation" dir={textDirection(locale)} lang={locale}>
             <div className="label-row" dir="ltr">

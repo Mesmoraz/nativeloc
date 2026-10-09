@@ -8,9 +8,13 @@ import { HttpError } from './auth.js';
 import { openDb, type DB } from './db.js';
 import { authRoutes } from './routes/auth.js';
 import { bundleRoutes } from './routes/bundles.js';
+import { communityRoutes } from './routes/community.js';
 import { localizeRoutes } from './routes/localize.js';
 import { placementRoutes } from './routes/placement.js';
+import { postingRoutes } from './routes/posting.js';
 import { projectRoutes } from './routes/projects.js';
+import { signupRoutes } from './routes/signup.js';
+import { staffRoutes } from './routes/staff.js';
 import { volunteerRoutes } from './routes/volunteer.js';
 
 export interface AppOptions {
@@ -19,6 +23,13 @@ export interface AppOptions {
   /** Built web app to serve at "/", if present. */
   webDist?: string;
   logger?: boolean;
+}
+
+/** What the Segment 2 piece route modules get. */
+export interface RouteDeps {
+  db: DB;
+  dataDir: string;
+  screenshotDir: string;
 }
 
 export async function buildApp(opts: AppOptions) {
@@ -44,6 +55,12 @@ export async function buildApp(opts: AppOptions) {
   placementRoutes(app, db);
   volunteerRoutes(app, db);
   bundleRoutes(app, db);
+  // Segment 2 pieces (2A sign-up, 2B staff, 2C community review, 2D posting); 2E extends volunteerRoutes.
+  const deps: RouteDeps = { db, dataDir: opts.dataDir, screenshotDir };
+  signupRoutes(app, deps);
+  staffRoutes(app, deps);
+  communityRoutes(app, deps);
+  postingRoutes(app, deps);
 
   if (opts.webDist && existsSync(opts.webDist)) {
     await app.register(fastifyStatic, { root: opts.webDist, wildcard: false });

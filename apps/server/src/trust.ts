@@ -1,5 +1,5 @@
 import { HttpError } from './auth.js';
-import { all, get, run, tx, type DB, type UserRow } from './db.js';
+import { all, get, run, tx, type DB, type Member, type UserRow } from './db.js';
 
 /**
  * Trust is per language. 'new' volunteers translate, but their reviews don't count until they pass the
@@ -18,7 +18,10 @@ export function tierOf(db: DB, user: UserRow, locale: string): Tier {
   const row = get<{ tier: Tier }>(db, 'SELECT tier FROM user_languages WHERE user_id = ? AND locale = ?', user.id, locale);
   if (row) return row.tier;
   // No row: someone an admin added directly. Admins and reviewers lead; invited localizers are vetted.
-  return user.role === 'localizer' ? 'trusted' : 'lead';
+  // Trust is per person, not per org, so the default comes from their strongest membership. No org at all: new.
+  const roles = all<{ role: string }>(db, 'SELECT role FROM memberships WHERE user_id = ?', user.id).map((m) => m.role);
+  if (roles.some((r) => r !== 'localizer')) return 'lead';
+  return roles.length ? 'trusted' : 'new';
 }
 
 export function tiersOf(db: DB, user: UserRow): Record<string, Tier> {
@@ -72,7 +75,8 @@ interface AnswerRow {
 const latestAttempt = (db: DB, userId: number, locale: string) =>
   get<AttemptRow>(db, 'SELECT * FROM placement_attempts WHERE user_id = ? AND locale = ? ORDER BY id DESC LIMIT 1', userId, locale);
 
-const itemCounts = (db: DB, orgId: number, locale: string) =>
+/** Placement content belongs to an org; volunteers take the check of the org they're working in (null: none). */
+const itemCounts = (db: DB, orgId: number | null, locale: string) =>
   Object.fromEntries(
     all<{ kind: string; n: number }>(db, 'SELECT kind, COUNT(*) AS n FROM placement_items WHERE org_id = ? AND locale = ? AND archived = 0 GROUP BY kind', orgId, locale).map((r) => [r.kind, r.n]),
   ) as Partial<Record<'translate' | 'review', number>>;
@@ -83,9 +87,9 @@ function retryAfter(attempt: AttemptRow | undefined): string | null {
   return at > Date.now() ? new Date(at).toISOString() : null;
 }
 
-export function placementStatus(db: DB, user: UserRow, locale: string) {
+export function placementStatus(db: DB, user: UserRow, orgId: number | null, locale: string) {
   const attempt = latestAttempt(db, user.id, locale);
-  const counts = itemCounts(db, user.org_id, locale);
+  const counts = itemCounts(db, orgId, locale);
   return {
     locale,
     tier: tierOf(db, user, locale),
@@ -119,7 +123,7 @@ function shuffle<T>(xs: T[]): T[] {
   return xs;
 }
 
-export function startPlacement(db: DB, user: UserRow, locale: string) {
+export function startPlacement(db: DB, user: UserRow, orgId: number | null, locale: string) {
   if (!(JSON.parse(user.locales) as string[]).includes(locale)) throw new HttpError(403, `You haven't joined ${locale}.`);
   if (tierOf(db, user, locale) !== 'new') throw new HttpError(409, 'You can already review in this language.');
   const last = latestAttempt(db, user.id, locale);
@@ -128,7 +132,7 @@ export function startPlacement(db: DB, user: UserRow, locale: string) {
   const wait = retryAfter(last);
   if (wait) throw new HttpError(409, `You can try again after ${wait.slice(0, 10)}.`);
 
-  const items = all<ItemRow>(db, 'SELECT * FROM placement_items WHERE org_id = ? AND locale = ? AND archived = 0', user.org_id, locale);
+  const items = all<ItemRow>(db, 'SELECT * FROM placement_items WHERE org_id = ? AND locale = ? AND archived = 0', orgId, locale);
   if (!items.length) throw new HttpError(404, 'There is no placement check for this language yet. An admin can add one, or mark you as trusted.');
   const translate = shuffle(items.filter((i) => i.kind === 'translate')).slice(0, PICK.translate);
   const review = shuffle(items.filter((i) => i.kind === 'review')).slice(0, PICK.review);
@@ -180,19 +184,21 @@ export function submitPlacement(db: DB, user: UserRow, attemptId: number, answer
   });
 }
 
-/** Who may grade: admins, reviewers of the language, and leads in it. Never the candidate. */
-function canGrade(db: DB, grader: UserRow, locale: string) {
+/** Who may grade: admins, reviewers of the language, and leads in it (with their role in the org grading). Never the candidate. */
+function canGrade(db: DB, grader: Member, locale: string) {
   if (grader.role === 'admin') return true;
   const locales = JSON.parse(grader.locales) as string[];
   return locales.includes(locale) && (grader.role === 'reviewer' || tierOf(db, grader, locale) === 'lead');
 }
 
-export function gradingQueue(db: DB, grader: UserRow) {
+/** Submitted checks by members of the grader's org. */
+export function gradingQueue(db: DB, grader: Member) {
   const attempts = all<AttemptRow & { name: string }>(
     db,
     `SELECT a.*, u.name FROM placement_attempts a JOIN users u ON u.id = a.user_id
-     WHERE a.status = 'submitted' AND u.org_id = ? AND a.user_id != ? ORDER BY a.submitted_at`,
-    grader.org_id, grader.id,
+     JOIN memberships m ON m.user_id = a.user_id AND m.org_id = ?
+     WHERE a.status = 'submitted' AND a.user_id != ? ORDER BY a.submitted_at`,
+    grader.orgId, grader.id,
   ).filter((a) => canGrade(db, grader, a.locale));
   return attempts.map((a) => ({
     id: a.id,
@@ -216,9 +222,13 @@ export function gradingQueue(db: DB, grader: UserRow) {
   }));
 }
 
-export function gradePlacement(db: DB, grader: UserRow, attemptId: number, grades: { itemId: number; pass: boolean; note?: string }[]) {
-  const attempt = get<AttemptRow & { org_id: number }>(db, 'SELECT a.*, u.org_id FROM placement_attempts a JOIN users u ON u.id = a.user_id WHERE a.id = ?', attemptId);
-  if (!attempt || attempt.org_id !== grader.org_id) throw new HttpError(404, 'Placement check not found.');
+export function gradePlacement(db: DB, grader: Member, attemptId: number, grades: { itemId: number; pass: boolean; note?: string }[]) {
+  const attempt = get<AttemptRow>(
+    db,
+    'SELECT a.* FROM placement_attempts a JOIN memberships m ON m.user_id = a.user_id AND m.org_id = ? WHERE a.id = ?',
+    grader.orgId, attemptId,
+  );
+  if (!attempt) throw new HttpError(404, 'Placement check not found.');
   if (attempt.user_id === grader.id) throw new HttpError(403, "You can't grade your own placement check.");
   if (!canGrade(db, grader, attempt.locale)) throw new HttpError(403, 'Only reviewers and leads in this language can grade it.');
   if (attempt.status !== 'submitted') throw new HttpError(409, 'This placement check is not waiting to be graded.');

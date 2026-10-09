@@ -2,7 +2,7 @@
  * Demo data for local development. Run `npm run seed` (`npm run seed:reset` starts over).
  *
  * Test accounts (local demo only):
- *   admin@demo.test   / demo-admin-pass      admin
+ *   admin@demo.test   / demo-admin-pass      admin      (also NativeLoc staff)
  *   lucas@demo.test   / demo-reviewer-pass   reviewer   es, fr
  *   maria@demo.test   / demo-localizer-pass  localizer  es
  *   yuki@demo.test    / demo-localizer-pass  localizer  ja
@@ -15,7 +15,13 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hashPassword, sha256 } from './auth.js';
-import { get, openDb, run, type ProjectRow, type UserRow } from './db.js';
+import { addMembership, get, getUser, memberOf, openDb, run, type ProjectRow, type Role } from './db.js';
+import { seedModeration } from './seed/moderation.js';
+import { seedPool } from './seed/pool.js';
+import { seedPosting } from './seed/posting.js';
+import { seedReview } from './seed/review.js';
+import { seedSignup } from './seed/signup.js';
+import type { Demo } from './seed/types.js';
 import { importFile, publish, saveTranslation, upsertEntries } from './services.js';
 
 const root = resolve(fileURLToPath(import.meta.url), '../../../..');
@@ -34,13 +40,18 @@ if (get(db, 'SELECT 1 FROM orgs')) {
 }
 
 const orgId = Number(run(db, "INSERT INTO orgs (name) VALUES ('FreshMart Demo')").lastInsertRowid);
-const user = (email: string, name: string, password: string, role: string, locales: string[]) =>
-  Number(run(db, 'INSERT INTO users (org_id, email, name, password_hash, role, locales) VALUES (?, ?, ?, ?, ?, ?)', orgId, email, name, hashPassword(password), role, JSON.stringify(locales)).lastInsertRowid);
+const user = (email: string, name: string, password: string, role: Role, locales: string[]) => {
+  const id = Number(run(db, 'INSERT INTO users (email, name, password_hash, locales) VALUES (?, ?, ?, ?)', email, name, hashPassword(password), JSON.stringify(locales)).lastInsertRowid);
+  addMembership(db, id, orgId, role);
+  return id;
+};
 
-user('admin@demo.test', 'Avery Admin', 'demo-admin-pass', 'admin', []);
+// The demo admin is also NativeLoc staff, so the staff console (2B) has someone to sign in as.
+const admin = user('admin@demo.test', 'Avery Admin', 'demo-admin-pass', 'admin', []);
+run(db, 'UPDATE users SET is_staff = 1 WHERE id = ?', admin);
 const lucas = user('lucas@demo.test', 'Lucas Ortega', 'demo-reviewer-pass', 'reviewer', ['es', 'fr']);
-user('maria@demo.test', 'María López', 'demo-localizer-pass', 'localizer', ['es']);
-user('yuki@demo.test', 'Yuki Tanaka', 'demo-localizer-pass', 'localizer', ['ja']);
+const maria = user('maria@demo.test', 'María López', 'demo-localizer-pass', 'localizer', ['es']);
+const yuki = user('yuki@demo.test', 'Yuki Tanaka', 'demo-localizer-pass', 'localizer', ['ja']);
 const sam = user('sam@demo.test', 'Sam Rivera', 'demo-localizer-pass', 'localizer', ['es', 'fr']);
 
 function project(name: string, token: string, locales: string[]): ProjectRow {
@@ -112,7 +123,7 @@ run(db, 'INSERT INTO api_tokens (project_id, name, token_hash, scopes) VALUES (?
 
 // Approved translations for part of the kiosk, so the device simulator visibly changes language
 // right away. The rest is left untranslated so localizers have a queue to work through.
-const reviewer = get<{ id: number; org_id: number; email: string; name: string; password_hash: string; role: 'reviewer'; locales: string }>(db, 'SELECT * FROM users WHERE id = ?', lucas)!;
+const reviewer = memberOf(db, getUser(db, lucas)!, orgId)!;
 const keyId = (p: ProjectRow, name: string) => get<{ id: number }>(db, 'SELECT id FROM keys WHERE project_id = ? AND name = ?', p.id, name)!.id;
 const approve = (p: ProjectRow, locale: string, strings: Record<string, string>) => {
   for (const [name, text] of Object.entries(strings)) saveTranslation(db, p, reviewer, keyId(p, name), locale, text, true);
@@ -139,7 +150,7 @@ approve(scale, 'es', { 'Place item on the scale': 'Coloque el producto en la bá
 
 // Sam has translated a few pantry strings that are waiting for two other volunteers (Review cards for María),
 // so his XP shows as pending until they approve.
-const samRow = get<UserRow>(db, 'SELECT * FROM users WHERE id = ?', sam)!;
+const samRow = memberOf(db, getUser(db, sam)!, orgId)!;
 const pantryRow = get<ProjectRow>(db, 'SELECT * FROM projects WHERE id = ?', pantry.id)!;
 const submit = (locale: string, strings: Record<string, string>) => {
   for (const [name, text] of Object.entries(strings)) saveTranslation(db, pantryRow, samRow, keyId(pantry, name), locale, text, false);
@@ -157,6 +168,10 @@ submit('fr', {
   'pantry.call': 'Appeler',
 });
 
+// Demo data for the Segment 2 pieces, each in its own file (see docs/segment-2-contracts.md).
+const demo: Demo = { orgId, users: { admin, lucas, maria, yuki, sam }, projects: { kiosk, scale, signage, pantry } };
+for (const seedPiece of [seedSignup, seedModeration, seedReview, seedPosting, seedPool]) seedPiece(db, demo);
+
 // Publish v1 of every project so devices have bundles to download immediately.
 for (const p of [kiosk, scale, signage, pantry]) publish(db, get<ProjectRow>(db, 'SELECT * FROM projects WHERE id = ?', p.id)!);
 
@@ -166,7 +181,7 @@ Seeded ${dbPath}
   Web app        http://localhost:5173   (the sign-in page has one-click demo accounts)
   Kiosk device   http://localhost:5174
 
-  admin@demo.test  / demo-admin-pass       admin
+  admin@demo.test  / demo-admin-pass       admin      (also NativeLoc staff)
   lucas@demo.test  / demo-reviewer-pass    reviewer   es, fr
   maria@demo.test  / demo-localizer-pass   localizer  es
   yuki@demo.test   / demo-localizer-pass   localizer  ja

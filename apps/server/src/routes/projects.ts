@@ -2,7 +2,7 @@ import { createReadStream, existsSync, unlinkSync, writeFileSync } from 'node:fs
 import { basename, join } from 'node:path';
 import { ADAPTERS, detectFormat, displayKey, type SourceEntry } from '@nativeloc/core';
 import type { FastifyInstance } from 'fastify';
-import { actorOf, HttpError, projectAccess, randomToken, requireUser, sha256 } from '../auth.js';
+import { actorOf, HttpError, projectAccess, randomToken, requireMember, requireUser, sha256 } from '../auth.js';
 import { all, get, run, tx, type DB, type KeyRow, type ProjectRow } from '../db.js';
 import { exportFile, importFile, manifest, progress, projectLocales, publish, reviewable, upsertEntries } from '../services.js';
 import { tierOf, type Tier } from '../trust.js';
@@ -23,6 +23,10 @@ function projectJson(db: DB, p: ProjectRow) {
     peerApprovals: p.peer_approvals,
     version: p.version,
     bundleToken: p.bundle_token,
+    orgId: p.org_id,
+    visibility: p.visibility,
+    moderation: p.moderation,
+    reviewMode: p.review_mode,
     progress: progress(db, p.id) as (ReturnType<typeof progress>[number] & { reviewable?: number; tier?: Tier })[],
   };
 }
@@ -41,8 +45,10 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
   }));
 
   app.get('/api/v1/projects', async (req) => {
-    const { user, locales } = requireUser(db, req);
-    const rows = all<ProjectRow>(db, 'SELECT * FROM projects WHERE org_id = ? ORDER BY name', user.org_id);
+    // The org this sign-in is working in. Someone with no org has no projects of their own (the open pool is 2E's).
+    const { current: user, locales } = requireUser(db, req);
+    if (!user) return { projects: [] };
+    const rows = all<ProjectRow>(db, 'SELECT * FROM projects WHERE org_id = ? ORDER BY name', user.orgId);
     const projects = rows.map((p) => projectJson(db, p));
     // Localizers only see the languages they work on, and how much of it they can review.
     if (user.role !== 'admin') {
@@ -57,13 +63,13 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
   });
 
   app.post<{ Body: { name?: string; sourceLocale?: string; locales?: string[]; requireReview?: boolean } }>('/api/v1/projects', async (req) => {
-    const { user } = requireUser(db, req, ['admin']);
+    const { member } = requireMember(db, req, ['admin']);
     const name = req.body?.name?.trim();
     if (!name) throw new HttpError(400, 'Give the project a name.');
     const source = checkLocale(req.body?.sourceLocale ?? 'en');
     const locales = [...new Set((req.body?.locales ?? []).map(checkLocale))].filter((l) => l !== source);
     const id = tx(db, () => {
-      const r = run(db, 'INSERT INTO projects (org_id, name, source_locale, bundle_token, require_review) VALUES (?, ?, ?, ?, ?)', user.org_id, name, source, randomToken('pb_'), req.body?.requireReview === false ? 0 : 1);
+      const r = run(db, 'INSERT INTO projects (org_id, name, source_locale, bundle_token, require_review) VALUES (?, ?, ?, ?, ?)', member.orgId, name, source, randomToken('pb_'), req.body?.requireReview === false ? 0 : 1);
       const pid = Number(r.lastInsertRowid);
       for (const l of locales) run(db, 'INSERT INTO project_locales (project_id, locale) VALUES (?, ?)', pid, l);
       return pid;
@@ -72,9 +78,9 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
   });
 
   app.get<{ Params: { id: string } }>('/api/v1/projects/:id', async (req) => {
-    const { project, actor } = projectAccess(db, req, intParam(req.params.id), 'read');
+    const { project, actor, member } = projectAccess(db, req, intParam(req.params.id), 'read');
     const json = projectJson(db, project);
-    if (actor.kind === 'user' && actor.user.role !== 'admin') json.progress = json.progress.filter((r) => actor.locales.includes(r.locale));
+    if (actor.kind === 'user' && member?.role !== 'admin') json.progress = json.progress.filter((r) => actor.locales.includes(r.locale));
     return { project: json, manifest: manifest(db, project) };
   });
 

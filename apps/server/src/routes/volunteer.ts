@@ -1,8 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { requireUser } from '../auth.js';
-import { all, type DB, type ProjectRow, type UserRow } from '../db.js';
-import { projectLocales, queue } from '../services.js';
-import { tierOf } from '../trust.js';
+import { all, type DB, type Member, type ProjectRow, type Role, type UserRow } from '../db.js';
+import { projectLocales, queue, reviewRight } from '../services.js';
 import { stats } from '../xp.js';
 
 // Shapes are the contract in apps/web/src/volunteer/types.ts.
@@ -16,15 +15,8 @@ interface Card {
   item: Item;
 }
 
-/** Who may review a project's strings in `locale`; mirrors projectAccess, so every Review card can be acted on. */
-function canReview(db: DB, project: ProjectRow, locale: string, user: UserRow) {
-  if (user.role !== 'localizer') return true;
-  const tier = tierOf(db, user, locale);
-  return tier === 'lead' || (tier === 'trusted' && project.peer_approvals > 0);
-}
-
 /**
- * A short session of cards from every project in the user's org, in their languages. Translate and Review
+ * A short session of cards from every project in the orgs the user belongs to, in their languages. Translate and Review
  * alternate (Translate first) while both last; within each kind, projects and queue order are kept.
  */
 export function buildSession(db: DB, user: UserRow, size: number): { cards: Card[]; empty: null | 'no_languages' | 'nothing_to_do' } {
@@ -32,16 +24,20 @@ export function buildSession(db: DB, user: UserRow, size: number): { cards: Card
   if (!locales.length) return { cards: [], empty: 'no_languages' };
 
   const piles: Record<Card['type'], Card[]> = { translate: [], review: [] };
-  const deal = (type: Card['type'], project: ProjectRow, locale: string) => {
+  const deal = (type: Card['type'], project: ProjectRow, member: Member, locale: string) => {
     if (piles[type].length >= size) return;
-    const { items } = queue(db, project, locale, type, { viewer: user, limit: size - piles[type].length });
+    const { items } = queue(db, project, locale, type, { viewer: member, limit: size - piles[type].length });
     for (const item of items) piles[type].push({ id: `${type}:${item.keyId}:${locale}`, type, project: { id: project.id, name: project.name, sourceLocale: project.source_locale }, locale, item });
   };
-  for (const project of all<ProjectRow>(db, 'SELECT * FROM projects WHERE org_id = ? ORDER BY id', user.org_id)) {
+  const roles = new Map(all<{ org_id: number; role: Role }>(db, 'SELECT org_id, role FROM memberships WHERE user_id = ?', user.id).map((m) => [m.org_id, m.role]));
+  const projects = all<ProjectRow>(db, 'SELECT p.* FROM projects p JOIN memberships m ON m.org_id = p.org_id AND m.user_id = ? ORDER BY p.id', user.id);
+  for (const project of projects) {
+    // The user as a member of this project's org: their role there decides what they may review.
+    const member: Member = { ...user, orgId: project.org_id, role: roles.get(project.org_id)! };
     const offered = projectLocales(db, project.id);
     for (const locale of locales.filter((l) => offered.includes(l))) {
-      deal('translate', project, locale);
-      if (canReview(db, project, locale, user)) deal('review', project, locale);
+      deal('translate', project, member, locale);
+      if (reviewRight(db, project, member, locale)) deal('review', project, member, locale);
     }
   }
 

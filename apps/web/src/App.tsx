@@ -1,7 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { ProjectAdmin } from './admin/ProjectAdmin';
-import { api, type User } from './api';
+import { api } from './api';
+import { communityRoutes } from './community/routes';
+import type { MeResponse } from './contracts';
 import { Workspace } from './localizer/Workspace';
 import { Home } from './pages/Home';
 import { Grading } from './pages/Grading';
@@ -9,13 +11,15 @@ import { Invite } from './pages/Invite';
 import { Join } from './pages/Join';
 import { Login } from './pages/Login';
 import { Placement } from './pages/Placement';
+import { postingRoutes } from './posting/routes';
+import { AccountMenu } from './signup/AccountMenu';
+import { signupRoutes } from './signup/routes';
+import { staffRoutes } from './staff/routes';
 import { isMock } from './volunteer/client';
 import { VolunteerApp } from './volunteer/VolunteerApp';
 
-interface Session {
-  user: User;
-  org: { id: number; name: string };
-}
+/** GET /api/v1/me. `org` is null for someone who belongs to no org yet. */
+type Session = MeResponse;
 
 const SessionContext = createContext<{ session: Session | null; refresh: () => Promise<void>; logout: () => Promise<void> }>({
   session: null,
@@ -36,8 +40,10 @@ export function TopBar({ children }: { children?: React.ReactNode }) {
       {session && (
         <div className="row hide-sm small">
           <span className="muted">
-            {session.user.name} · {session.org.name}
+            {session.user.name}
+            {session.org ? ` · ${session.org.name}` : ''}
           </span>
+          <AccountMenu />
           <button className="ghost" onClick={logout}>
             Sign out
           </button>
@@ -75,6 +81,11 @@ export function App() {
         <Route path="/join/:code" element={<Join />} />
         {/* The dev mock (?mock=1) runs the card flow without signing in. */}
         {isMock && <Route path="/v" element={<VolunteerApp />} />}
+        {/* Segment 2 pieces add their pages here (each file is owned by one piece). */}
+        {signupRoutes(session)}
+        {staffRoutes(session)}
+        {communityRoutes(session)}
+        {postingRoutes(session)}
         {!session ? (
           <Route path="*" element={<Login />} />
         ) : (

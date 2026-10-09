@@ -4,9 +4,11 @@ import { TopBar } from '../App';
 import { api, type JoinLink, type Project, type Tier, type User } from '../api';
 import { ChipText, ProgressBar, StatusBadge } from '../components';
 import { languageName, nativeLanguageName } from '../types';
+import { postingTabs } from '../posting/projectTabs';
 import { Screenshots } from './Screenshots';
 
-type Tab = 'overview' | 'strings' | 'import' | 'screens' | 'team' | 'questions' | 'devices';
+// Built-in tabs, plus any a Segment 2 piece adds (postingTabs, by id).
+type Tab = string;
 const TABS: [Tab, string][] = [
   ['overview', 'Overview'],
   ['strings', 'Strings'],
@@ -15,6 +17,7 @@ const TABS: [Tab, string][] = [
   ['team', 'Team'],
   ['questions', 'Questions'],
   ['devices', 'Devices & API'],
+  ...postingTabs.map((t): [Tab, string] => [t.id, t.label]),
 ];
 
 export interface Manifest {
@@ -75,6 +78,9 @@ export function ProjectAdmin() {
             {tab === 'team' && <Team project={project} />}
             {tab === 'questions' && <Questions projectId={project.id} />}
             {tab === 'devices' && <Devices project={project} manifest={manifest} reload={load} />}
+            {postingTabs.filter((t) => t.id === tab).map((t) => (
+              <div key={t.id}>{t.render({ project, reload: load })}</div>
+            ))}
           </>
         )}
       </main>
@@ -445,7 +451,7 @@ function Team({ project }: { project: Project }) {
                   <div className="small muted">{u.email}</div>
                 </td>
                 <td>
-                  <select value={u.role} onChange={(e) => void update(u, { role: e.target.value as User['role'] })}>
+                  <select value={u.role ?? ''} onChange={(e) => void update(u, { role: e.target.value as User['role'] })}>
                     <option value="localizer">Localizer</option>
                     <option value="reviewer">Reviewer</option>
                     <option value="admin">Admin</option>

@@ -9,7 +9,8 @@ export interface Card {
   /** Stable within a session, e.g. "translate:12:es". */
   id: string;
   type: CardType;
-  project: { id: number; name: string };
+  /** `sourceLocale` is the language the strings are written in (e.g. "en"), for labelling and plural examples. */
+  project: { id: number; name: string; sourceLocale: string };
   locale: string;
   item: QueueItem;
 }

@@ -15,7 +15,7 @@ const ALT = isMac ? '⌥' : 'Alt';
  * Plain-language heading for a CLDR plural category, plus one example number used to show
  * the English reference and the live preview as real sentences.
  */
-function formLabel(cat: string, examples: number[] | undefined, locale: string, only = false): { title: string; example: number } {
+export function formLabel(cat: string, examples: number[] | undefined, locale: string, only = false): { title: string; example: number } {
   if (cat.startsWith('=')) return { title: `For exactly ${cat.slice(1)}`, example: Number(cat.slice(1)) };
   if (only) return { title: 'For any number', example: 2 };
   const all = examples ?? [];
@@ -33,14 +33,14 @@ function formLabel(cat: string, examples: number[] | undefined, locale: string, 
 }
 
 /** An example number for a source-language plural form (English: 1 for "one", 2 for "other"). */
-function sourceExample(cat: string, locale: string) {
+export function sourceExample(cat: string, locale: string) {
   return formLabel(cat, (pluralExamples(locale) as Record<string, number[]>)[cat], locale).example;
 }
 
 // Translation boxes hold another language; keep grammar extensions from flagging every word.
-const noGrammarly = { 'data-gramm': 'false', 'data-gramm_editor': 'false', 'data-enable-grammarly': 'false' };
+export const noGrammarly = { 'data-gramm': 'false', 'data-gramm_editor': 'false', 'data-enable-grammarly': 'false' };
 
-function isEmptyModel(m: EditorModel) {
+export function isEmptyModel(m: EditorModel) {
   return m.kind === 'plural' ? Object.values(m.forms).every((f) => !f.trim()) : !m.text.trim();
 }
 
@@ -565,7 +565,7 @@ function Approvals({ count, needed }: { count: number; needed: number }) {
   );
 }
 
-function LengthMeter({ text, max }: { text: string; max: number | null }) {
+export function LengthMeter({ text, max }: { text: string; max: number | null }) {
   if (!max) return null;
   // Counts like the server check: placeholders take no space, numbers take two.
   const len = [...text.replace(/\{[^{}]+\}/g, '').replace(/#/g, '00')].length;

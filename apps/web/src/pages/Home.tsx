@@ -4,6 +4,7 @@ import { TopBar, useSession } from '../App';
 import { api, type Project } from '../api';
 import { ProgressBar } from '../components';
 import { languageName, nativeLanguageName } from '../types';
+import '../volunteer/volunteer.css';
 
 export function Home() {
   const { session } = useSession();
@@ -64,6 +65,17 @@ function LocalizerHome({ projects }: { projects: Project[] }) {
           Pick up where you left off. Strings are shown one at a time with a picture of where they appear.
         </p>
       </div>
+      {work.length > 0 && (
+        <div className="card v-entry">
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <b>Got 5 minutes?</b>
+            <div className="small muted">Translate or check five short strings on your phone. XP counts once others approve your work.</div>
+          </div>
+          <Link className="btn primary" to="/v">
+            Start a 5-minute session
+          </Link>
+        </div>
+      )}
       <GradingBanner />
       {!work.length && <div className="card muted">Nothing is assigned to you yet. Your admin will add you to a language, or open a volunteer sign-up link to pick one.</div>}
       <div className="grid-cards">

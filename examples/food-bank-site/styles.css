@@ -1,0 +1,13 @@
+body { margin: 0; font: 17px/1.6 Georgia, 'Times New Roman', serif; color: #1c2b22; background: #fbfaf6; }
+header { background: #2f5d3a; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+header img { width: 44px; height: 44px; }
+header .name { font-size: 22px; font-weight: bold; }
+nav { display: flex; gap: 18px; margin-left: auto; }
+nav a { color: #fff; }
+main { max-width: 720px; margin: 0 auto; padding: 24px; }
+h1 { color: #2f5d3a; }
+.notice { background: #fff4d6; border-left: 4px solid #e0a100; padding: 10px 14px; }
+.button { display: inline-block; background: #2f5d3a; color: #fff; padding: 10px 18px; border-radius: 6px; text-decoration: none; }
+table { border-collapse: collapse; }
+td, th { padding: 6px 14px 6px 0; text-align: left; }
+footer { border-top: 1px solid #ddd; margin-top: 40px; padding: 16px 24px; font-size: 15px; color: #555; }

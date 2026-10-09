@@ -8,6 +8,7 @@ import { HttpError } from './auth.js';
 import { openDb, type DB } from './db.js';
 import { authRoutes } from './routes/auth.js';
 import { bundleRoutes } from './routes/bundles.js';
+import { hostedRoutes } from './routes/hosted.js';
 import { localizeRoutes } from './routes/localize.js';
 import { placementRoutes } from './routes/placement.js';
 import { projectRoutes } from './routes/projects.js';
@@ -18,6 +19,10 @@ export interface AppOptions {
   /** Built web app to serve at "/", if present. */
   webDist?: string;
   logger?: boolean;
+  /** How the hosted preview reads organizations' sites (tests pass a fake). */
+  fetch?: typeof fetch;
+  /** Let the hosted preview read sites on private networks (default: outside production only). */
+  allowPrivateSites?: boolean;
 }
 
 export async function buildApp(opts: AppOptions) {
@@ -42,12 +47,13 @@ export async function buildApp(opts: AppOptions) {
   localizeRoutes(app, db);
   placementRoutes(app, db);
   bundleRoutes(app, db);
+  hostedRoutes(app, { db, fetch: opts.fetch, allowPrivate: opts.allowPrivateSites });
 
   if (opts.webDist && existsSync(opts.webDist)) {
     await app.register(fastifyStatic, { root: opts.webDist, wildcard: false });
     // Single-page app: unknown non-API GETs get index.html.
     app.setNotFoundHandler((req, reply) => {
-      if (req.method === 'GET' && !/^\/(api|b|files)\//.test(req.url)) return reply.sendFile('index.html');
+      if (req.method === 'GET' && !/^\/(api|b|files|preview)\//.test(req.url)) return reply.sendFile('index.html');
       return reply.code(404).send({ error: 'Not found.' });
     });
   }

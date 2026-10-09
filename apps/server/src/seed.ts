@@ -9,13 +9,15 @@
  *
  * CLI / REST push token for the "FreshMart Kiosk" project: nl_demo_kiosk_push_token
  * Volunteer sign-up link (Spanish, French; the kiosk uses peer review): /join/demo-volunteers
+ * Website preview of the demo food bank site (examples/food-bank-site): /preview/pv_demo_food_bank/
  */
 import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { readPage, siteEntries, type CrawledPage } from '@nativeloc/site';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hashPassword, sha256 } from './auth.js';
 import { get, openDb, run, type ProjectRow } from './db.js';
-import { importFile, publish, saveTranslation } from './services.js';
+import { importFile, publish, saveTranslation, upsertEntries } from './services.js';
 
 const root = resolve(fileURLToPath(import.meta.url), '../../../..');
 const dataDir = resolve(process.env.NATIVELOC_DATA ?? resolve(root, 'data'));
@@ -110,6 +112,51 @@ approve(kiosk, 'fr', {
 approve(signage, 'es', { 'menu.title': 'Ofertas de hoy' });
 approve(scale, 'es', { 'Place item on the scale': 'Coloque el producto en la báscula' });
 
+// A nonprofit website, read the way `nativeloc crawl` reads one. The demo serves the site at :5175; the
+// preview shows it with the Spanish below. Somali has nothing yet, so it shows the English fallback.
+const website = project('Cedar Valley Food Bank (website)', 'pb_demo_food_bank', ['es', 'so']);
+run(db, "UPDATE projects SET site_url = 'http://localhost:5175', preview_token = 'pv_demo_food_bank' WHERE id = ?", website.id);
+const sitePages: CrawledPage[] = ['index', 'get-food', 'hours'].map((name, i) => ({
+  ...readPage(example(`food-bank-site/${name}.html`), `http://localhost:5175/${name === 'index' ? '' : name}`),
+  path: name === 'index' ? '/' : `/${name}`,
+  depth: i ? 1 : 0,
+  priority: 3 - i,
+}));
+upsertEntries(db, website, siteEntries(sitePages).entries);
+const bySource = (p: ProjectRow, locale: string, strings: Record<string, string>) => {
+  for (const [source, text] of Object.entries(strings)) {
+    const k = get<{ id: number }>(db, 'SELECT id FROM keys WHERE project_id = ? AND source = ?', p.id, source);
+    if (!k) throw new Error(`Demo site has no text "${source}"`);
+    saveTranslation(db, p, reviewer, k.id, locale, text, true);
+  }
+};
+bySource(website, 'es', {
+  'Free groceries for anyone in Cedar Valley who needs them.': 'Alimentos gratis para cualquier persona de Cedar Valley que los necesite.',
+  'Cedar Valley Food Bank logo': 'Logotipo de Cedar Valley Food Bank',
+  '{link1}Home{link1_end} {link2}Get food{link2_end} {link3}Hours and locations{link3_end}': '{link1}Inicio{link1_end} {link2}Obtener alimentos{link2_end} {link3}Horarios y ubicaciones{link3_end}',
+  'Free groceries for anyone who needs them': 'Alimentos gratis para quien los necesite',
+  '{bold1}Holiday hours:{bold1_end} we are closed on Thursday, November 26.': '{bold1}Horario festivo:{bold1_end} cerraremos el jueves 26 de noviembre.',
+  "Everyone is welcome. You don't need ID, proof of address or an appointment.": 'Todos son bienvenidos. No necesita identificación, comprobante de domicilio ni cita.',
+  'How to get food': 'Cómo obtener alimentos',
+  'Need help right away?': '¿Necesita ayuda de inmediato?',
+  'Call our help line at {link1}206-555-0142{link1_end}. We answer in English and Spanish.': 'Llame a nuestra línea de ayuda al {link1}206-555-0142{link1_end}. Atendemos en inglés y español.',
+  'Get food · Cedar Valley Food Bank': 'Obtener alimentos · Cedar Valley Food Bank',
+  'How to get free groceries from Cedar Valley Food Bank.': 'Cómo obtener alimentos gratis de Cedar Valley Food Bank.',
+  'Get food': 'Obtener alimentos',
+  'You can visit {bold1}once a week{bold1_end}. Each visit, you choose your own groceries, including fresh fruit, vegetables, milk and eggs.':
+    'Puede venir {bold1}una vez por semana{bold1_end}. En cada visita, usted elige sus alimentos, como frutas, verduras, leche y huevos frescos.',
+  'What to bring': 'Qué traer',
+  'Your own bags, if you have them.': 'Sus propias bolsas, si las tiene.',
+  "Nothing else. You don't need ID or proof of address.": 'Nada más. No necesita identificación ni comprobante de domicilio.',
+  'Home delivery': 'Entrega a domicilio',
+  "If you are over 60 or can't leave home, we can bring groceries to you. Call {link1}206-555-0142{link1_end} to sign up.":
+    'Si tiene más de 60 años o no puede salir de casa, le llevamos los alimentos. Llame al {link1}206-555-0142{link1_end} para inscribirse.',
+  'See our {link1}hours and locations{link1_end} before you come.': 'Consulte nuestros {link1}horarios y ubicaciones{link1_end} antes de venir.',
+  // The hours page is only started, so the preview shows translated and English text side by side.
+  'Hours and locations · Cedar Valley Food Bank': 'Horarios y ubicaciones · Cedar Valley Food Bank',
+  'Hours and locations': 'Horarios y ubicaciones',
+});
+
 // Publish v1 of every project so devices have bundles to download immediately.
 for (const p of [kiosk, scale, signage]) publish(db, get<ProjectRow>(db, 'SELECT * FROM projects WHERE id = ?', p.id)!);
 
@@ -118,6 +165,7 @@ Seeded ${dbPath}
 
   Web app        http://localhost:5173   (the sign-in page has one-click demo accounts)
   Kiosk device   http://localhost:5174
+  Website preview http://localhost:5173/preview/pv_demo_food_bank/   (demo site: http://localhost:5175)
 
   admin@demo.test  / demo-admin-pass       admin
   lucas@demo.test  / demo-reviewer-pass    reviewer   es, fr

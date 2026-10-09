@@ -1,5 +1,6 @@
 import { HttpError } from './auth.js';
 import { all, get, run, tx, type DB, type Member, type Role, type UserRow } from './db.js';
+import { platformOrgId } from './signup/platform.js';
 
 /**
  * Trust is per language. 'new' volunteers translate, but their reviews don't count until they pass the
@@ -82,10 +83,23 @@ interface AnswerRow {
 const latestAttempt = (db: DB, userId: number, locale: string) =>
   get<AttemptRow>(db, 'SELECT * FROM placement_attempts WHERE user_id = ? AND locale = ? ORDER BY id DESC LIMIT 1', userId, locale);
 
-/** Placement content belongs to an org; volunteers take the check of the org they're working in (null: none). */
+const hasItems = (db: DB, orgId: number | null, locale: string) =>
+  orgId != null && !!get(db, 'SELECT 1 FROM placement_items WHERE org_id = ? AND locale = ? AND archived = 0', orgId, locale);
+
+/**
+ * Placement content belongs to an org. Volunteers take the check of the org they're working in; when it has none
+ * for the language (or they have no org, like most pool volunteers), the platform-wide set (signup/platform.ts).
+ * The org whose items an attempt used grades it.
+ */
+export function placementOrg(db: DB, orgId: number | null, locale: string): number | null {
+  if (hasItems(db, orgId, locale)) return orgId;
+  const platform = platformOrgId(db);
+  return hasItems(db, platform, locale) ? platform : orgId;
+}
+
 const itemCounts = (db: DB, orgId: number | null, locale: string) =>
   Object.fromEntries(
-    all<{ kind: string; n: number }>(db, 'SELECT kind, COUNT(*) AS n FROM placement_items WHERE org_id = ? AND locale = ? AND archived = 0 GROUP BY kind', orgId, locale).map((r) => [r.kind, r.n]),
+    all<{ kind: string; n: number }>(db, 'SELECT kind, COUNT(*) AS n FROM placement_items WHERE org_id = ? AND locale = ? AND archived = 0 GROUP BY kind', placementOrg(db, orgId, locale), locale).map((r) => [r.kind, r.n]),
   ) as Partial<Record<'translate' | 'review', number>>;
 
 function retryAfter(attempt: AttemptRow | undefined): string | null {
@@ -139,7 +153,7 @@ export function startPlacement(db: DB, user: UserRow, orgId: number | null, loca
   const wait = retryAfter(last);
   if (wait) throw new HttpError(409, `You can try again after ${wait.slice(0, 10)}.`);
 
-  const items = all<ItemRow>(db, 'SELECT * FROM placement_items WHERE org_id = ? AND locale = ? AND archived = 0', orgId, locale);
+  const items = all<ItemRow>(db, 'SELECT * FROM placement_items WHERE org_id = ? AND locale = ? AND archived = 0', placementOrg(db, orgId, locale), locale);
   if (!items.length) throw new HttpError(404, 'There is no placement check for this language yet. An admin can add one, or mark you as trusted.');
   const translate = shuffle(items.filter((i) => i.kind === 'translate')).slice(0, PICK.translate);
   const review = shuffle(items.filter((i) => i.kind === 'review')).slice(0, PICK.review);
@@ -198,14 +212,16 @@ function canGrade(db: DB, grader: Member, locale: string) {
   return locales.includes(locale) && (grader.role === 'reviewer' || tierOf(db, grader, locale) === 'lead');
 }
 
-/** Submitted checks by members of the grader's org. */
+/** An attempt belongs to the org whose placement items it used (the volunteer's org, or the platform's). */
+const ATTEMPT_OF_ORG = 'EXISTS (SELECT 1 FROM placement_answers an JOIN placement_items i ON i.id = an.item_id WHERE an.attempt_id = a.id AND i.org_id = ?)';
+
+/** Submitted checks taken on the grader's org's placement items. */
 export function gradingQueue(db: DB, grader: Member) {
   const attempts = all<AttemptRow & { name: string }>(
     db,
     `SELECT a.*, u.name FROM placement_attempts a JOIN users u ON u.id = a.user_id
-     JOIN memberships m ON m.user_id = a.user_id AND m.org_id = ?
-     WHERE a.status = 'submitted' AND a.user_id != ? ORDER BY a.submitted_at`,
-    grader.orgId, grader.id,
+     WHERE a.status = 'submitted' AND a.user_id != ? AND ${ATTEMPT_OF_ORG} ORDER BY a.submitted_at`,
+    grader.id, grader.orgId,
   ).filter((a) => canGrade(db, grader, a.locale));
   return attempts.map((a) => ({
     id: a.id,
@@ -232,8 +248,8 @@ export function gradingQueue(db: DB, grader: Member) {
 export function gradePlacement(db: DB, grader: Member, attemptId: number, grades: { itemId: number; pass: boolean; note?: string }[]) {
   const attempt = get<AttemptRow>(
     db,
-    'SELECT a.* FROM placement_attempts a JOIN memberships m ON m.user_id = a.user_id AND m.org_id = ? WHERE a.id = ?',
-    grader.orgId, attemptId,
+    `SELECT a.* FROM placement_attempts a WHERE a.id = ? AND ${ATTEMPT_OF_ORG}`,
+    attemptId, grader.orgId,
   );
   if (!attempt) throw new HttpError(404, 'Placement check not found.');
   if (attempt.user_id === grader.id) throw new HttpError(403, "You can't grade your own placement check.");

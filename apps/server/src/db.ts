@@ -186,6 +186,24 @@ CREATE TABLE IF NOT EXISTS questions (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   resolved_at TEXT
 );
+-- Volunteer XP as a ledger (see xp.ts): totals are sums, never stored counters. key_id and project_id carry no
+-- foreign keys on purpose, so accepted XP outlives the strings it was earned on.
+CREATE TABLE IF NOT EXISTS xp_events (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('translate', 'review')),
+  key_id INTEGER NOT NULL,
+  locale TEXT NOT NULL,
+  project_id INTEGER NOT NULL,
+  points INTEGER NOT NULL CHECK (points > 0),
+  status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'voided')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  settled_at TEXT
+);
+-- One pending event per person per string and kind: re-saving your own text doesn't stack.
+CREATE UNIQUE INDEX IF NOT EXISTS xp_one_pending ON xp_events(user_id, key_id, locale, kind) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS xp_string ON xp_events(key_id, locale, status);
+CREATE INDEX IF NOT EXISTS xp_user ON xp_events(user_id, status);
 CREATE INDEX IF NOT EXISTS translations_locale ON translations(locale, status);
 CREATE INDEX IF NOT EXISTS keys_project ON keys(project_id, archived);
 `;

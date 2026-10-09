@@ -15,6 +15,7 @@ import {
 import { HttpError } from './auth.js';
 import { all, get, run, tx, type DB, type KeyRow, type ProjectRow, type TranslationRow, type UserRow } from './db.js';
 import { tierOf } from './trust.js';
+import { onApprove, onSave, onVote } from './xp.js';
 
 export function projectLocales(db: DB, projectId: number): string[] {
   return all<{ locale: string }>(db, 'SELECT locale FROM project_locales WHERE project_id = ? ORDER BY locale', projectId).map((r) => r.locale);
@@ -295,15 +296,18 @@ export function saveTranslation(db: DB, project: ProjectRow, user: UserRow, keyI
   if (issues.some((i) => i.level === 'error')) throw new HttpError(422, issues.find((i) => i.level === 'error')!.message, { issues });
   const canApprove = user.role !== 'localizer' || tierOf(db, user, locale) === 'lead';
   const status = (approve && canApprove) || !project.require_review ? 'approved' : 'review';
-  run(
-    db,
-    `INSERT INTO translations (key_id, locale, text, status, updated_by) VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT (key_id, locale) DO UPDATE SET text = excluded.text, status = excluded.status, updated_by = excluded.updated_by, updated_at = CURRENT_TIMESTAMP`,
-    keyId, locale, text, status, user.id,
-  );
-  // Approvals were for the old wording.
-  run(db, 'DELETE FROM votes WHERE key_id = ? AND locale = ?', keyId, locale);
-  return { status, issues };
+  return tx(db, () => {
+    run(
+      db,
+      `INSERT INTO translations (key_id, locale, text, status, updated_by) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (key_id, locale) DO UPDATE SET text = excluded.text, status = excluded.status, updated_by = excluded.updated_by, updated_at = CURRENT_TIMESTAMP`,
+      keyId, locale, text, status, user.id,
+    );
+    // Approvals were for the old wording.
+    run(db, 'DELETE FROM votes WHERE key_id = ? AND locale = ?', keyId, locale);
+    const xp = onSave(db, user.id, { projectId: project.id, keyId, locale }, status);
+    return { status, issues, xp };
+  });
 }
 
 const approvalCount = (db: DB, keyId: number, locale: string) =>
@@ -316,20 +320,27 @@ const approvalCount = (db: DB, keyId: number, locale: string) =>
 export function approveTranslation(db: DB, project: ProjectRow, user: UserRow, keyId: number, locale: string) {
   const t = get<TranslationRow>(db, 'SELECT * FROM translations WHERE key_id = ? AND locale = ?', keyId, locale);
   if (!t) throw new HttpError(404, 'Nothing to approve yet.');
+  const s = { projectId: project.id, keyId, locale };
   if (!isPeer(db, project, locale, user)) {
-    run(db, "UPDATE translations SET status = 'approved', updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE key_id = ? AND locale = ?", user.id, keyId, locale);
-    run(db, 'DELETE FROM votes WHERE key_id = ? AND locale = ?', keyId, locale);
-    return { status: 'approved' as const };
+    return tx(db, () => {
+      run(db, "UPDATE translations SET status = 'approved', updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE key_id = ? AND locale = ?", user.id, keyId, locale);
+      run(db, 'DELETE FROM votes WHERE key_id = ? AND locale = ?', keyId, locale);
+      // Reviewing is staff's job, so no XP for them. A volunteer lead's review of someone else's work earns XP.
+      const xp = onApprove(db, user.id, s, user.role === 'localizer' && t.status === 'review' && t.updated_by !== user.id);
+      return { status: 'approved' as const, xp };
+    });
   }
   if (t.status !== 'review') throw new HttpError(409, 'This one is no longer waiting for review.');
   if (t.updated_by === user.id) throw new HttpError(403, "You can't approve your own translation. Another volunteer will review it.");
   return tx(db, () => {
-    run(db, 'INSERT OR IGNORE INTO votes (key_id, locale, user_id) VALUES (?, ?, ?)', keyId, locale, user.id);
+    const voted = Number(run(db, 'INSERT OR IGNORE INTO votes (key_id, locale, user_id) VALUES (?, ?, ?)', keyId, locale, user.id).changes) > 0;
     const count = approvalCount(db, keyId, locale);
     // The author keeps credit (updated_by) when peers approve.
     const status = count >= project.peer_approvals ? 'approved' : 'review';
     if (status === 'approved') run(db, "UPDATE translations SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE key_id = ? AND locale = ?", keyId, locale);
-    return { status, approvals: { count, needed: project.peer_approvals } };
+    // Approving twice is one vote, and earns once.
+    const xp = voted ? onVote(db, user.id, s, status === 'approved') : null;
+    return { status, approvals: { count, needed: project.peer_approvals }, xp };
   });
 }
 

@@ -1,5 +1,5 @@
 import { HttpError } from './auth.js';
-import { all, get, run, tx, type DB, type Member, type UserRow } from './db.js';
+import { all, get, run, tx, type DB, type Member, type Role, type UserRow } from './db.js';
 
 /**
  * Trust is per language. 'new' volunteers translate, but their reviews don't count until they pass the
@@ -16,12 +16,19 @@ const PICK = { translate: 5, review: 8 };
 
 export function tierOf(db: DB, user: UserRow, locale: string): Tier {
   const row = get<{ tier: Tier }>(db, 'SELECT tier FROM user_languages WHERE user_id = ? AND locale = ?', user.id, locale);
-  if (row) return row.tier;
-  // No row: someone an admin added directly. Admins and reviewers lead; invited localizers are vetted.
-  // Trust is per person, not per org, so the default comes from their strongest membership. No org at all: new.
-  const roles = all<{ role: string }>(db, 'SELECT role FROM memberships WHERE user_id = ?', user.id).map((m) => m.role);
-  if (roles.some((r) => r !== 'localizer')) return 'lead';
-  return roles.length ? 'trusted' : 'new';
+  // No row: not placed yet. Trust only ever comes from a row: the placement check, an admin, or an invite (vouchFor).
+  // Never derive it from memberships: anyone can be the admin of an org they created themselves.
+  return row?.tier ?? 'new';
+}
+
+/**
+ * An org vouches for someone its admin invites or adds: in `locales` they haven't been placed in yet, admins and
+ * reviewers lead and localizers are trusted. Only for people another person brought in; an org someone creates
+ * for themselves vouches for nobody.
+ */
+export function vouchFor(db: DB, userId: number, role: Role, locales: string[], reason: string) {
+  const tier: Tier = role === 'localizer' ? 'trusted' : 'lead';
+  for (const l of locales) run(db, 'INSERT OR IGNORE INTO user_languages (user_id, locale, tier, reason) VALUES (?, ?, ?, ?)', userId, l, tier, reason);
 }
 
 export function tiersOf(db: DB, user: UserRow): Record<string, Tier> {

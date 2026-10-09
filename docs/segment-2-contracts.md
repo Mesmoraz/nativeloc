@@ -241,14 +241,16 @@ Where the plan says a piece does something in a file it doesn't own, the hook al
 
 ## 6. Risks for the parallel pieces
 
-1. **Default trust leaks across orgs (2A, 2E).** With no `user_languages` row, an admin or reviewer of *any* org
-   is `lead` in every language. A requester who signs up gets an admin membership in their own org, so once 2E
-   opens public projects to non-members, that requester could approve volunteers' work outright. 2A must write
-   an explicit `new` row for every language a self-serve user picks (sign-up, `PATCH /me`, org creation), as join
-   links already do. 2E should add a test that a requester-admin's first public review is a vote, not an approval.
-2. **Placement checks are per org (2A, 2E).** `placement_items.org_id` means a volunteer with no org has no
-   placement check, so they can never leave `new`. 2A needs a platform-wide set (e.g. items owned by a staff
-   org) before 2E's open pool is useful for reviewing. Coordinate before building.
+1. **Trust never comes from a role (fixed in 2.0).** With no `user_languages` row, `tierOf` returns `new`. Trust
+   comes only from a row: the placement check, an admin's placement, or `vouchFor`, which invite acceptance and
+   an admin adding a language to a member call. The migration wrote each existing user's old default down as rows.
+   **Never call `vouchFor` for an org the person created themselves** (2A's sign-up and org creation): a requester
+   who is admin of their own org is still `new` everywhere. 2E should still test that a requester-admin's first
+   public review is refused or counts as a vote, not an approval.
+2. **Placement checks are per org; 2A owns the fix.** `placement_items.org_id` means a volunteer with no org has
+   no placement check, so they can never leave `new`. 2A adds a platform-wide set (items owned by a staff org,
+   seeded for the demo languages) and makes the placement routes fall back to it when the volunteer's current
+   org has none. 2E builds against that: Review cards appear for pool volunteers once they're `trusted`.
 3. **Languages and tiers are global, but team admins edit them (2A).** `PATCH /api/v1/users/:id` lets an org
    admin change a member's `locales` and tiers, which now affects every org that person helps. Today that's the
    same as before (one org), but 2A should limit what an admin can change for people who are also members

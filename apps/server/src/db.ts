@@ -122,8 +122,8 @@ CREATE TABLE IF NOT EXISTS join_links (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   disabled_at TEXT
 );
--- Trust per language. No row means the default for the role (see tierOf): people an admin
--- invited are vetted already; volunteers from a sign-up link start as 'new'.
+-- Trust per language. No row means 'new' (see tierOf). Invites write the inviting org's vouch (vouchFor);
+-- sign-up links and self-serve accounts start at 'new' until the placement check.
 CREATE TABLE IF NOT EXISTS user_languages (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   locale TEXT NOT NULL,
@@ -242,10 +242,14 @@ CREATE INDEX IF NOT EXISTS keys_project ON keys(project_id, archived);
  * so old scripts and fixtures keep working. App code adds memberships itself. Goes when the columns go.
  */
 const TRIGGERS = `
-CREATE TRIGGER IF NOT EXISTS users_legacy_membership AFTER INSERT ON users
+DROP TRIGGER IF EXISTS users_legacy_membership;
+CREATE TRIGGER users_legacy_membership AFTER INSERT ON users
 WHEN NEW.org_id IS NOT NULL AND NEW.role IS NOT NULL
 BEGIN
   INSERT OR IGNORE INTO memberships (user_id, org_id, role) VALUES (NEW.id, NEW.org_id, NEW.role);
+  INSERT OR IGNORE INTO user_languages (user_id, locale, tier, reason)
+  SELECT NEW.id, value, CASE NEW.role WHEN 'localizer' THEN 'trusted' ELSE 'lead' END, 'vouched by their org (legacy insert)'
+  FROM json_each(NEW.locales);
 END;
 `;
 
@@ -347,6 +351,13 @@ function migrateAfter(db: DB, existing: Set<string>) {
   // Segment 2: every existing user keeps their one org and role, now as a membership.
   if (existing.has('users') && !existing.has('memberships')) {
     run(db, 'INSERT OR IGNORE INTO memberships (user_id, org_id, role, created_at) SELECT id, org_id, role, created_at FROM users WHERE org_id IS NOT NULL AND role IS NOT NULL');
+    // Trust used to default from the role when there was no row; it now defaults to 'new'. Write the old default down.
+    run(
+      db,
+      `INSERT OR IGNORE INTO user_languages (user_id, locale, tier, reason)
+       SELECT u.id, l.value, CASE u.role WHEN 'localizer' THEN 'trusted' ELSE 'lead' END, 'vouched by their org before Segment 2'
+       FROM users u, json_each(u.locales) l WHERE u.org_id IS NOT NULL AND u.role IS NOT NULL`,
+    );
   }
 }
 

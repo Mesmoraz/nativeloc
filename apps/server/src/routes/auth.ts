@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { actorOf, createSession, hashPassword, HttpError, membershipsOf, type UserActor, randomToken, requireMember, requireUser, SESSION_COOKIE, sha256, verifyPassword } from '../auth.js';
 import { addMembership, all, get, getUser, memberOf, ROLES, run, tx, USER_COLUMNS, type DB, type OrgRow, type Role, type UserRow } from '../db.js';
-import { setTier, tiersOf, TIERS, type Tier } from '../trust.js';
+import { setTier, tiersOf, TIERS, vouchFor, type Tier } from '../trust.js';
 import { checkLocale } from '../util.js';
 
 /**
@@ -86,6 +86,7 @@ export function authRoutes(app: FastifyInstance, db: DB) {
     const userId = tx(db, () => {
       const r = run(db, 'INSERT INTO users (email, name, password_hash, locales) VALUES (?, ?, ?, ?)', email, name, hashPassword(password), inv.locales);
       addMembership(db, Number(r.lastInsertRowid), inv.org_id, inv.role);
+      vouchFor(db, Number(r.lastInsertRowid), inv.role, JSON.parse(inv.locales), 'invited by an admin');
       run(db, 'UPDATE invites SET used_at = CURRENT_TIMESTAMP WHERE token_hash = ?', sha256(req.params.token));
       return Number(r.lastInsertRowid);
     });
@@ -193,6 +194,8 @@ export function authRoutes(app: FastifyInstance, db: DB) {
     tx(db, () => {
       addMembership(db, target.id, member.orgId, role);
       run(db, 'UPDATE users SET locales = ? WHERE id = ?', locales, target.id);
+      const added = (JSON.parse(locales) as string[]).filter((l) => !(JSON.parse(target.locales) as string[]).includes(l));
+      vouchFor(db, target.id, role, added, `added by ${member.name}`);
       // Admins can place people directly, e.g. for an interpreter certification or a partner organization's vouch.
       for (const [l, t] of Object.entries(req.body?.tiers ?? {})) {
         if (!TIERS.includes(t)) throw new HttpError(400, 'Tier must be new, trusted or lead.');

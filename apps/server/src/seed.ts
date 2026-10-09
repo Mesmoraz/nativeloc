@@ -16,6 +16,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hashPassword, sha256 } from './auth.js';
 import { addMembership, get, getUser, memberOf, openDb, run, type ProjectRow, type Role } from './db.js';
+import { vouchFor } from './trust.js';
 import { seedModeration } from './seed/moderation.js';
 import { seedPool } from './seed/pool.js';
 import { seedPosting } from './seed/posting.js';
@@ -43,6 +44,7 @@ const orgId = Number(run(db, "INSERT INTO orgs (name) VALUES ('FreshMart Demo')"
 const user = (email: string, name: string, password: string, role: Role, locales: string[]) => {
   const id = Number(run(db, 'INSERT INTO users (email, name, password_hash, locales) VALUES (?, ?, ?, ?)', email, name, hashPassword(password), JSON.stringify(locales)).lastInsertRowid);
   addMembership(db, id, orgId, role);
+  vouchFor(db, id, role, locales, 'demo team');
   return id;
 };
 

@@ -6,7 +6,8 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { hashPassword } from '../src/auth.js';
-import { addMembership, all, get, openDb, run, type DB } from '../src/db.js';
+import { addMembership, all, get, getUser, openDb, run, type DB } from '../src/db.js';
+import { tierOf } from '../src/trust.js';
 
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
 
@@ -76,6 +77,28 @@ describe('migrating a Segment 1 database', () => {
       run(db, "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ('h3', ?, 1)", fresh);
       run(db, 'DELETE FROM users WHERE id = ?', fresh);
       expect(get(db, 'SELECT COUNT(*) AS n FROM sessions')).toEqual({ n: 1 }); // ON DELETE CASCADE survived the rebuild
+    } finally {
+      db.close();
+    }
+  });
+
+  it('writes down the trust each user had by default, and keeps placed tiers', () => {
+    // Before Segment 2, no trust row meant lead for reviewers and trusted for localizers.
+    const own = join(tempDir(), 'trust.sqlite');
+    const old = new DatabaseSync(own);
+    old.exec(readFileSync(join(import.meta.dirname, 'fixtures/schema-segment-1.sql'), 'utf8'));
+    const org = Number(old.prepare("INSERT INTO orgs (name) VALUES ('Old Org')").run().lastInsertRowid);
+    const loc = Number(old.prepare(`INSERT INTO users (org_id, email, name, password_hash, role, locales) VALUES (?, 'loc@old.test', 'Loc', ?, 'localizer', '["es"]')`).run(org, pw).lastInsertRowid);
+    old.prepare("INSERT INTO user_languages (user_id, locale, tier, reason) VALUES (?, 'es', 'new', 'joined from sign-up link')").run(loc);
+    old.prepare(`INSERT INTO users (org_id, email, name, password_hash, role, locales) VALUES (?, 'rev@old.test', 'Rev', ?, 'reviewer', '["es","fr"]')`).run(org, pw);
+    old.close();
+    const db = openDb(own);
+    try {
+      expect(all(db, "SELECT u.email, l.locale, l.tier FROM user_languages l JOIN users u ON u.id = l.user_id ORDER BY u.email, l.locale")).toEqual([
+        { email: 'loc@old.test', locale: 'es', tier: 'new' },
+        { email: 'rev@old.test', locale: 'es', tier: 'lead' },
+        { email: 'rev@old.test', locale: 'fr', tier: 'lead' },
+      ]);
     } finally {
       db.close();
     }
@@ -219,6 +242,16 @@ describe('several orgs per user', () => {
     expect(res.json().user).toMatchObject({ role: 'reviewer', locales: ['fr'] });
     const id = get<{ id: number }>(db, "SELECT id FROM users WHERE email = 'newbie@t.test'")!.id;
     expect(all(db, 'SELECT org_id, role FROM memberships WHERE user_id = ?', id)).toEqual([{ org_id: o.b, role: 'reviewer' }]);
+    // The inviting org vouches for them in the invite's languages only.
+    expect(tierOf(db, getUser(db, id)!, 'fr')).toBe('lead');
+    expect(tierOf(db, getUser(db, id)!, 'es')).toBe('new');
+  });
+
+  it('never derives trust from being an admin: an org someone runs themselves vouches for nobody', () => {
+    const founder = user('founder@t.test', ['es', 'fr']);
+    addMembership(db, founder, o.c, 'admin');
+    expect(tierOf(db, getUser(db, founder)!, 'es')).toBe('new');
+    expect(tierOf(db, getUser(db, founder)!, 'fr')).toBe('new');
   });
 
   it('reports staff in /me', async () => {

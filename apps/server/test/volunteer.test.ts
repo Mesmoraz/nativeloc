@@ -23,7 +23,7 @@ const as = (email: string) => ({ cookie: cookies[email] });
 /** A user in `org`; `tiers` adds user_languages rows (no row: trusted localizer). */
 async function user(org: number, email: string, role: string, locales: string[], tiers: Record<string, string> = {}) {
   const id = Number(run(db, 'INSERT INTO users (org_id, email, name, password_hash, role, locales) VALUES (?, ?, ?, ?, ?, ?)', org, email, email.split('@')[0], pw, role, JSON.stringify(locales)).lastInsertRowid);
-  for (const [l, tier] of Object.entries(tiers)) run(db, "INSERT INTO user_languages (user_id, locale, tier, reason) VALUES (?, ?, ?, 'test')", id, l, tier);
+  for (const [l, tier] of Object.entries(tiers)) run(db, "INSERT INTO user_languages (user_id, locale, tier, reason) VALUES (?, ?, ?, 'test') ON CONFLICT (user_id, locale) DO UPDATE SET tier = excluded.tier", id, l, tier);
   await login(email);
   return id;
 }

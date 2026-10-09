@@ -179,6 +179,8 @@ function Overview({ project, manifest, reload }: { project: Project; manifest: M
         </label>
       </div>
 
+      <WebsitePreview project={project} saveSettings={saveSettings} reload={reload} />
+
       <div className="card stack">
         <h2 style={{ margin: 0 }}>Publish to devices</h2>
         <p className="muted" style={{ margin: 0 }}>
@@ -737,6 +739,88 @@ interface Token {
   scopes: string[];
   created_at: string;
   last_used_at: string | null;
+}
+
+function WebsitePreview({ project, saveSettings, reload }: { project: Project; saveSettings: (patch: Record<string, unknown>) => Promise<void>; reload: () => Promise<void> }) {
+  const [site, setSite] = useState(project.siteUrl ?? '');
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState('');
+  const base = project.previewToken ? `${location.origin}/preview/${project.previewToken}` : null;
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    try {
+      await saveSettings({ siteUrl: site });
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function rotate() {
+    if (!confirm('The current preview links will stop working, and new ones will replace them. Continue?')) return;
+    await api(`/api/v1/projects/${project.id}/rotate-preview-token`, { method: 'POST' });
+    await reload();
+  }
+
+  function copy(url: string) {
+    void navigator.clipboard.writeText(url);
+    setCopied(url);
+  }
+
+  return (
+    <div className="card stack">
+      <h2 style={{ margin: 0 }}>Website preview</h2>
+      <p className="small muted" style={{ margin: 0 }}>
+        Shows the organization's live website with the translations approved so far, before anything is published. Text that isn't translated yet stays in{' '}
+        {languageName(project.sourceLocale)}. The link is private: search engines never index it, and only people you send it to can open it.
+      </p>
+      <form className="row" onSubmit={(e) => void save(e)}>
+        <label className="field" style={{ flex: 1 }}>
+          Website address
+          <input value={site} onChange={(e) => setSite(e.target.value)} placeholder="https://example.org" inputMode="url" />
+        </label>
+        <button style={{ alignSelf: 'flex-end' }}>Save</button>
+      </form>
+      {error && <p className="small" style={{ margin: 0, color: 'var(--danger, #b91c1c)' }}>{error}</p>}
+      {project.siteUrl && base && (
+        <>
+          <table className="list">
+            <tbody>
+              {project.locales.map((l) => {
+                const url = `${base}/${l}/`;
+                return (
+                  <tr key={l}>
+                    <td>
+                      {nativeLanguageName(l)}
+                      {nativeLanguageName(l) !== languageName(l) && <span className="muted small"> {languageName(l)}</span>}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <a href={url} target="_blank" rel="noreferrer">
+                        Open preview
+                      </a>{' '}
+                      <button type="button" onClick={() => copy(url)}>
+                        {copied === url ? 'Copied' : 'Copy link'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div className="row small">
+            <span className="muted">
+              All languages: <a href={`${base}/`} target="_blank" rel="noreferrer">{`${base}/`}</a>
+            </span>
+            <span className="spacer" />
+            <button className="danger" type="button" onClick={() => void rotate()}>
+              Replace links
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 function Devices({ project, manifest, reload }: { project: Project; manifest: Manifest | null; reload: () => Promise<void> }) {

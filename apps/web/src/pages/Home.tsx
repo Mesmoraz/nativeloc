@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { TopBar, useSession } from '../App';
 import { api, type Project } from '../api';
 import { HomeNotice as CommunityNotice } from '../community/HomeNotice';
@@ -26,7 +26,7 @@ export function Home() {
         {error && <div className="alert error">{error}</div>}
         <SignupNotice />
         {isAdmin && <CommunityNotice />}
-        {projects && (isAdmin ? <AdminHome projects={projects} onCreated={load} /> : <LocalizerHome projects={projects} />)}
+        {projects && (isAdmin ? <AdminHome projects={projects} /> : <LocalizerHome projects={projects} />)}
       </main>
     </>
   );
@@ -133,25 +133,10 @@ function LocalizerHome({ projects }: { projects: Project[] }) {
   );
 }
 
-function AdminHome({ projects, onCreated }: { projects: Project[]; onCreated: () => void }) {
-  const navigate = useNavigate();
-  const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ name: '', sourceLocale: 'en', locales: 'es, fr' });
-  const [error, setError] = useState('');
-
-  async function create(e: React.FormEvent) {
-    e.preventDefault();
-    setError('');
-    try {
-      const r = await api<{ project: Project }>('/api/v1/projects', {
-        body: { name: form.name, sourceLocale: form.sourceLocale.trim(), locales: form.locales.split(/[\s,]+/).filter(Boolean) },
-      });
-      onCreated();
-      navigate(`/p/${r.project.id}`);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
+function AdminHome({ projects }: { projects: Project[] }) {
+  const { session } = useSession();
+  // Business accounts are waitlisted (posting/policy.ts on the server).
+  const waitlisted = session!.org?.type === 'business';
 
   return (
     <div className="stack">
@@ -159,27 +144,18 @@ function AdminHome({ projects, onCreated }: { projects: Project[]; onCreated: ()
       <div className="row">
         <h1 style={{ margin: 0 }}>Projects</h1>
         <span className="spacer" />
-        <button className="primary" onClick={() => setCreating(!creating)}>
-          New project
-        </button>
+        {!waitlisted && (
+          <Link className="btn primary" to="/new">
+            New project
+          </Link>
+        )}
       </div>
-      {creating && (
-        <form className="card row" onSubmit={create} style={{ alignItems: 'flex-end' }}>
-          <label className="field" style={{ flex: 2 }}>
-            Name
-            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Lobby check-in tablet" required autoFocus />
-          </label>
-          <label className="field" style={{ width: 110 }}>
-            Source language
-            <input value={form.sourceLocale} onChange={(e) => setForm({ ...form, sourceLocale: e.target.value })} />
-          </label>
-          <label className="field" style={{ flex: 1 }}>
-            Target languages
-            <input value={form.locales} onChange={(e) => setForm({ ...form, locales: e.target.value })} placeholder="es, fr, ja" />
-          </label>
-          <button className="primary">Create</button>
-          {error && <div className="alert error" style={{ width: '100%' }}>{error}</div>}
-        </form>
+      {waitlisted && <div className="card muted">Business accounts are on the waitlist for now. We’ll email you when posting opens for businesses.</div>}
+      {!projects.length && !waitlisted && (
+        <div className="card">
+          <b>Post your first project</b>
+          <div className="small muted">Paste text, upload your app’s strings, or give us your website. Native-speaker volunteers translate it.</div>
+        </div>
       )}
       <div className="grid-cards">
         {projects.map((p) => (
@@ -189,7 +165,9 @@ function AdminHome({ projects, onCreated }: { projects: Project[]; onCreated: ()
               <span className="spacer" />
               <span className="badge">{p.version ? `v${p.version}` : 'unpublished'}</span>
             </div>
-            <div className="small muted">{p.progress[0]?.total ?? 0} strings · source {languageName(p.sourceLocale)}</div>
+            <div className="small muted">{p.progress[0]?.total ?? 0} strings · source {languageName(p.sourceLocale)}
+              {p.visibility === 'public' ? ` · public${p.moderation === 'approved' ? '' : p.moderation === 'none' ? ', not submitted' : `, ${p.moderation}`}` : ''}
+            </div>
             {p.progress.map((pr) => (
               <div key={pr.locale} className="row small" style={{ flexWrap: 'nowrap' }}>
                 <span style={{ width: 90 }}>{languageName(pr.locale)}</span>

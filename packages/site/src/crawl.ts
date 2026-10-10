@@ -116,7 +116,8 @@ export async function crawl(start: string, opts: CrawlOptions = {}): Promise<Cra
   let rules: RobotsRule[] = [];
   try {
     const r = await doFetch(new URL('/robots.txt', origin).href, { headers });
-    if (r.ok) rules = robotsRules(await r.text());
+    // Match robots.txt groups against our product token ("NativeLocBot/0.1 (...)" → "nativelocbot").
+    if (r.ok) rules = robotsRules(await r.text(), headers['user-agent'].split('/')[0].trim().toLowerCase());
   } catch {
     // No robots.txt: everything is allowed.
   }

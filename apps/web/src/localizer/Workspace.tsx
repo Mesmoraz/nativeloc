@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { TopBar, useSession } from '../App';
 import { api, ApiError, type QueueItem, type QueueResponse } from '../api';
+import type { CommunityQueueFields, FlagReason } from '../contracts';
 import { ChipText, ProgressBar, StatusBadge } from '../components';
 import { languageName, nativeLanguageName, textDirection } from '../types';
 import { Screenshot } from './Screenshot';
@@ -116,7 +117,9 @@ export function Workspace() {
   // Peer reviewers (trusted localizers on a peer-review project) approve as one vote, and can't send work back.
   // A lead in the language reviews like a reviewer; new volunteers review after the placement check.
   const tier = session!.user.tiers[locale];
-  const peer = role === 'localizer' && (meta?.project.peerApprovals ?? 0) > 0 && tier !== 'lead';
+  // Community-reviewed projects (Segment 2C): every volunteer's approval is one vote, and Flag is a third choice.
+  const community = (item as CommunityItem | undefined)?.review != null;
+  const peer = role === 'localizer' && (community || ((meta?.project.peerApprovals ?? 0) > 0 && tier !== 'lead'));
   const canReview = role !== 'localizer' || tier === 'lead' || (peer && tier === 'trusted');
 
   const advance = useCallback(
@@ -145,7 +148,8 @@ export function Workspace() {
     try {
       if (mode === 'review' && unchanged && item.current) {
         const r = await api<{ status: string; approvals?: { count: number; needed: number } }>(`/api/v1/translations/${item.keyId}/${locale}/approve`, { method: 'POST' });
-        if (r.status === 'review' && r.approvals) {
+        if (r.status === 'ready') flash('Approved. Volunteers agree on this one; it now waits for the organization to publish it.');
+        else if (r.status === 'review' && r.approvals) {
           const left = r.approvals.needed - r.approvals.count;
           flash(`Approved. ${left} more volunteer${left === 1 ? '' : 's'} need${left === 1 ? 's' : ''} to approve it before it goes live.`);
         }
@@ -153,6 +157,20 @@ export function Workspace() {
         if (peer && mode === 'review') flash('Thanks! Your version goes to other volunteers for review.');
         await api(`/api/v1/translations/${item.keyId}/${locale}`, { method: 'PUT', body: { text, approve: mode === 'review' } });
       }
+      advance(item.keyId, true);
+    } catch (e) {
+      setServerError(e instanceof ApiError ? e.message : 'Could not save. Check your connection and try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function flagIt(reason: FlagReason) {
+    if (!item || saving) return;
+    setSaving(true);
+    try {
+      await api(`/api/v1/translations/${item.keyId}/${locale}/flag`, { body: { reason } });
+      flash('Flagged. Thanks: it now needs more reviews. If you know a better wording, edit it instead.');
       advance(item.keyId, true);
     } catch (e) {
       setServerError(e instanceof ApiError ? e.message : 'Could not save. Check your connection and try again.');
@@ -330,6 +348,12 @@ export function Workspace() {
             <div className="context-note">
               <b>Note: </b>
               {item.description}
+            </div>
+          )}
+          {mode === 'review' && (item as CommunityItem).sentBack && (
+            <div className="context-note">
+              <b>The organization sent this back: </b>
+              {(item as CommunityItem).sentBack}
             </div>
           )}
           {item.questions.map((q) => (
@@ -538,6 +562,21 @@ export function Workspace() {
           </button>
           <span className="spacer" />
           {mode === 'review' && item.approvals && <Approvals {...item.approvals} />}
+          {mode === 'review' && community && peer && unchanged && (
+            <select
+              className="flag-select"
+              aria-label="Flag a problem"
+              value=""
+              disabled={saving}
+              onChange={(e) => e.target.value && void flagIt(e.target.value as FlagReason)}
+            >
+              <option value="">Flag…</option>
+              <option value="meaning">Wrong meaning</option>
+              <option value="grammar">Grammar</option>
+              <option value="tone">Tone</option>
+              <option value="offensive">Offensive</option>
+            </select>
+          )}
           {mode === 'review' && !peer && (
             <button className="danger" onClick={() => void sendBack()}>
               Send back
@@ -551,6 +590,8 @@ export function Workspace() {
     </>
   );
 }
+
+type CommunityItem = QueueItem & Partial<CommunityQueueFields> & { sentBack?: string | null };
 
 function Approvals({ count, needed }: { count: number; needed: number }) {
   return (

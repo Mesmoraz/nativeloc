@@ -4,7 +4,7 @@ import { useSession } from '../App';
 import { ApiError } from '../api';
 import { ReviewCard, TranslateCard, type CardResult } from './Cards';
 import { isMock, volunteerClient, type VolunteerClient } from './client';
-import type { Card, SessionResponse, StatsResponse, XpTotals } from './types';
+import type { Card, SessionResponse, StatsResponse, VolunteerSettings, XpTotals } from './types';
 import './volunteer.css';
 
 type Screen =
@@ -22,6 +22,9 @@ export function VolunteerApp() {
   const [pop, setPop] = useState<CardResult['xp'] | 'saved' | null>(null);
   const [error, setError] = useState('');
   const [starting, setStarting] = useState(false);
+  // No settings yet (or an older server): no filter, and no Flag or Report buttons.
+  const [settings, setSettings] = useState<VolunteerSettings | null>(null);
+  const actions = settings?.actions ?? { flag: false, report: false };
 
   useEffect(() => {
     void volunteerClient().then(setClient);
@@ -31,6 +34,20 @@ export function VolunteerApp() {
     client?.stats().then(setStats, () => setStats(null));
   }, [client]);
   useEffect(loadStats, [loadStats]);
+  useEffect(() => {
+    client?.settings().then(setSettings, () => setSettings(null));
+  }, [client]);
+
+  async function toggleNonprofitsOnly(on: boolean) {
+    if (!client || !settings) return;
+    setSettings({ ...settings, nonprofitsOnly: on });
+    try {
+      setSettings(await client.setNonprofitsOnly(on));
+    } catch {
+      setSettings(settings);
+      setError('Could not save the filter. Try again.');
+    }
+  }
 
   async function start() {
     if (!client || starting) return;
@@ -89,14 +106,14 @@ export function VolunteerApp() {
         )}
       </header>
 
-      {screen.name === 'home' && <Home stats={stats} empty={screen.empty} error={error} starting={starting || !client} onStart={() => void start()} />}
+      {screen.name === 'home' && <Home stats={stats} empty={screen.empty} error={error} starting={starting || !client} onStart={() => void start()} settings={settings} onNonprofitsOnly={(on) => void toggleNonprofitsOnly(on)} />}
 
       {screen.name === 'session' && client && (
         <main className="v-card" key={screen.cards[screen.index].id}>
           {screen.cards[screen.index].type === 'review' ? (
-            <ReviewCard card={screen.cards[screen.index]} client={client} onDone={onCardDone} />
+            <ReviewCard card={screen.cards[screen.index]} client={client} onDone={onCardDone} actions={actions} />
           ) : (
-            <TranslateCard card={screen.cards[screen.index]} client={client} onDone={onCardDone} />
+            <TranslateCard card={screen.cards[screen.index]} client={client} onDone={onCardDone} actions={actions} />
           )}
           {pop && <XpPop xp={pop} />}
         </main>
@@ -151,7 +168,23 @@ function Xp({ totals, big = false }: { totals: XpTotals; big?: boolean }) {
   );
 }
 
-function Home({ stats, empty, error, starting, onStart }: { stats: StatsResponse | null; empty?: SessionResponse['empty']; error: string; starting: boolean; onStart: () => void }) {
+function Home({
+  stats,
+  empty,
+  error,
+  starting,
+  onStart,
+  settings,
+  onNonprofitsOnly,
+}: {
+  stats: StatsResponse | null;
+  empty?: SessionResponse['empty'];
+  error: string;
+  starting: boolean;
+  onStart: () => void;
+  settings: VolunteerSettings | null;
+  onNonprofitsOnly: (on: boolean) => void;
+}) {
   const { session } = useSession();
   const firstName = session?.user.name.split(' ')[0];
   return (
@@ -174,12 +207,26 @@ function Home({ stats, empty, error, starting, onStart }: { stats: StatsResponse
           </div>
         )}
         {stats && stats.today.pending > 0 && <p className="small muted v-explain">Faded XP is waiting for another volunteer to approve your work. It turns solid once they do.</p>}
+        {settings && (
+          <label className="v-filter">
+            <input type="checkbox" checked={settings.nonprofitsOnly} onChange={(e) => onNonprofitsOnly(e.target.checked)} />
+            <span>
+              <b>Nonprofits only</b>
+              <br />
+              <span className="small muted">Only cards from nonprofits we've verified.</span>
+            </span>
+          </label>
+        )}
         {empty === 'no_languages' && (
           <div className="alert warn">
             You haven't picked a language yet. <Link to="/">Choose your languages</Link> to get cards.
           </div>
         )}
-        {empty === 'nothing_to_do' && <div className="alert ok">All caught up! Nothing is waiting in your languages right now. Check back later.</div>}
+        {empty === 'nothing_to_do' && (
+          <div className="alert ok">
+            All caught up! Nothing is waiting in your languages{settings?.nonprofitsOnly ? ' from verified nonprofits' : ''} right now. Check back later.
+          </div>
+        )}
         {error && <div className="alert error">{error}</div>}
       </main>
       <div className="v-actions">

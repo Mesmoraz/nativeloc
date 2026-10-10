@@ -25,16 +25,5 @@ CREATE TABLE IF NOT EXISTS crawl_jobs (
 );
 CREATE INDEX IF NOT EXISTS crawl_jobs_project ON crawl_jobs(project_id, id);
 CREATE INDEX IF NOT EXISTS crawl_jobs_status ON crawl_jobs(status, id);
--- Every "submit for moderation" (and every re-screen after new content), with the automatic screen's answer.
--- 2B's moderation queue can read submittedAt and the reasons from here.
-CREATE TABLE IF NOT EXISTS project_submissions (
-  id INTEGER PRIMARY KEY,
-  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  decision TEXT NOT NULL,
-  reasons TEXT NOT NULL DEFAULT '[]',
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS project_submissions_project ON project_submissions(project_id, id);
 `,
 };

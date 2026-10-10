@@ -25,8 +25,8 @@ export function openPoolRole(db: DB, user: UserRow, project: ProjectRow, access:
 export const isVerifiedNonprofit = (org: Pick<OrgRow, 'type' | 'verification'>) => org.type === 'nonprofit' && org.verification === 'verified';
 
 /**
- * Which orgs the volunteer's "Nonprofits only" filter keeps. Decision point: verified nonprofits only, so an org
- * can't get into the filtered pool just by calling itself a nonprofit. Change it here if unverified ones should count.
+ * Which orgs the volunteer's "Nonprofits only" filter keeps: verified nonprofits only (decided 2026-10-10), so an org
+ * can't get into the filtered pool just by calling itself a nonprofit.
  */
 export const passesNonprofitsOnly = isVerifiedNonprofit;
 

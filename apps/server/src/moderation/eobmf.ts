@@ -1,4 +1,4 @@
-import { createReadStream } from 'node:fs';
+import { createReadStream, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { get, run, tx, type DB } from '../db.js';
 
@@ -61,13 +61,8 @@ export interface ImportResult {
 
 const BATCH = 5000;
 
-/**
- * Streams one EO-BMF CSV into eo_bmf (insert or replace by EIN). Columns are found by header name
- * (EIN, NAME, SORT_NAME, CITY, STATE, ZIP, SUBSECTION), so the IRS can add or reorder columns.
- * Works offline: download the files first. Pass `replace` on the first file of a full refresh to clear the table.
- */
-export async function importEoBmf(db: DB, file: string, opts: { replace?: boolean } = {}): Promise<ImportResult> {
-  const lines = createInterface({ input: createReadStream(file, 'utf8'), crlfDelay: Infinity });
+/** Feeds CSV lines (header first) into eo_bmf in batches. Columns are found by header name, so the IRS can add or reorder them. */
+function importer(db: DB, file: string) {
   let col: Record<string, number> | null = null;
   let batch: string[][] = [];
   const result: ImportResult = { rows: 0, skipped: 0 };
@@ -88,19 +83,40 @@ export async function importEoBmf(db: DB, file: string, opts: { replace?: boolea
     });
     batch = [];
   };
+  return {
+    line(raw: string) {
+      const line = raw.replace(/^﻿/, '');
+      if (!line.trim()) return;
+      if (!col) {
+        col = Object.fromEntries(parseCsvLine(line).map((h, i) => [h.trim().toUpperCase(), i]));
+        if (col.EIN === undefined || col.NAME === undefined) throw new Error(`${file} doesn't look like an EO-BMF CSV (no EIN and NAME columns in the header).`);
+        return;
+      }
+      batch.push(parseCsvLine(line));
+      if (batch.length >= BATCH) flush();
+    },
+    done() {
+      if (batch.length) flush();
+      return result;
+    },
+  };
+}
 
+/**
+ * Streams one EO-BMF CSV into eo_bmf (insert or replace by EIN). Works offline: download the files first.
+ * Pass `replace` on the first file of a full refresh to clear the table.
+ */
+export async function importEoBmf(db: DB, file: string, opts: { replace?: boolean } = {}): Promise<ImportResult> {
   if (opts.replace) run(db, 'DELETE FROM eo_bmf');
-  for await (const raw of lines) {
-    const line = raw.replace(/^﻿/, '');
-    if (!line.trim()) continue;
-    if (!col) {
-      col = Object.fromEntries(parseCsvLine(line).map((h, i) => [h.trim().toUpperCase(), i]));
-      if (col.EIN === undefined || col.NAME === undefined) throw new Error(`${file} doesn't look like an EO-BMF CSV (no EIN and NAME columns in the header).`);
-      continue;
-    }
-    batch.push(parseCsvLine(line));
-    if (batch.length >= BATCH) flush();
-  }
-  if (batch.length) flush();
-  return result;
+  const imp = importer(db, file);
+  for await (const line of createInterface({ input: createReadStream(file, 'utf8'), crlfDelay: Infinity })) imp.line(line);
+  return imp.done();
+}
+
+/** The same for a small file already in memory (the demo seed and tests). */
+export function importEoBmfSync(db: DB, file: string, opts: { replace?: boolean } = {}): ImportResult {
+  if (opts.replace) run(db, 'DELETE FROM eo_bmf');
+  const imp = importer(db, file);
+  for (const line of readFileSync(file, 'utf8').split(String.fromCharCode(10))) imp.line(line.trimEnd());
+  return imp.done();
 }

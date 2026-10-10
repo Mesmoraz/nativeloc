@@ -101,7 +101,8 @@ describe('pool sessions', () => {
     const only = (s: { cards: C[] }) => [...new Set(s.cards.map((c) => c.org.name))];
     expect(only(await session('vol@pool.test', '&nonprofitsOnly=1'))).toEqual(['Food Bank']);
     expect(only(await session('vol@pool.test'))).toEqual(['Food Bank']);
-    expect((await app.inject({ url: '/api/v1/volunteer/settings', headers: as('vol@pool.test') })).json()).toMatchObject({ nonprofitsOnly: true });
+    // With 2B and 2C merged, both card actions are offered.
+    expect((await app.inject({ url: '/api/v1/volunteer/settings', headers: as('vol@pool.test') })).json()).toMatchObject({ nonprofitsOnly: true, actions: { flag: true, report: true } });
     await app.inject({ method: 'PUT', url: '/api/v1/volunteer/settings', headers: as('vol@pool.test'), payload: { nonprofitsOnly: false } });
     expect(only(await session('vol@pool.test')).length).toBeGreaterThan(1);
   });

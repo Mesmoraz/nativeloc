@@ -202,6 +202,8 @@ describe('adaptive rounds', () => {
     expect(f).toMatchObject({ status: 'review', review: { reviews: 0, flags: 0, needed: 3 }, xp: null });
     expect((await flag('fresh', k, 'grammar')).json()).toMatchObject({ review: { reviews: 0 } });
     expect(get<{ n: number }>(db, "SELECT COUNT(*) AS n FROM reviews WHERE key_id = ? AND kind = 'flag' AND counts = 0", k)!.n).toBe(2);
+    // The offensive one still reaches staff as a report on that string; the grammar one doesn't.
+    expect(all(db, 'SELECT key_id AS keyId, reason FROM project_reports WHERE key_id = ?', k)).toEqual([{ keyId: k, reason: 'harmful' }]);
     expect((await approveBy(k, ['v1', 'v2', 'v3'])).status).toBe('ready');
   });
 

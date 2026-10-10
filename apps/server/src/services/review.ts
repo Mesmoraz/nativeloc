@@ -1,6 +1,7 @@
 import { displayKey, validateTranslation, type Issue } from '@nativeloc/core';
 import { HttpError } from '../auth.js';
 import { all, get, run, tx, type DB, type KeyRow, type Member, type ProjectRow, type TranslationRow } from '../db.js';
+import { fileReport } from '../moderation/reports.js';
 import { tierOf } from '../trust.js';
 import { awardOf, onApprove, onCommunityReview, onCommunitySave, onSave, onVote, settleCommunity, type XpAward } from '../xp.js';
 
@@ -169,7 +170,9 @@ export function flagTranslation(db: DB, project: ProjectRow, user: Member, keyId
   return tx(db, () => {
     if (currentReviewBy(db, keyId, locale, user.id)) throw new HttpError(409, 'You already reviewed this wording.');
     run(db, "INSERT INTO reviews (key_id, locale, user_id, kind, reason, note, text, counts) VALUES (?, ?, ?, 'flag', ?, ?, ?, ?)", keyId, locale, user.id, reason, note?.trim() || null, t.text, counts);
-    // TODO(integration): an uncounted flag from a new volunteer goes to staff as a report: call 2B's fileReport here.
+    // An uncounted 'offensive' flag from a new volunteer still reaches staff, as a report on that string. Other
+    // uncounted flags (meaning, grammar, tone) are kept for the poster but shouldn't count toward pausing a project.
+    if (!counts && reason === 'offensive') fileReport(db, user.id, project, { keyId, reason: 'harmful', note: `Flagged as offensive (${locale})${note?.trim() ? `: ${note.trim()}` : ''}` });
     const xp = counts ? onCommunityReview(db, user.id, s) : null;
     return { status: 'review' as const, review: reviewOf(db, keyId, locale), xp };
   });

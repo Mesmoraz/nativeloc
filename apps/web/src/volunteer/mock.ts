@@ -4,12 +4,17 @@
 import { listPlaceholders, pluralExamples, targetTemplate, toEditorModel, validateTranslation } from '@nativeloc/core';
 import { ApiError, type QueueItem } from '../api';
 import type { VolunteerClient } from './client';
-import type { Card, StatsResponse } from './types';
+import type { CardOrg } from '../contracts';
+import type { Card, StatsResponse, VolunteerSettings } from './types';
 import { XP } from './types';
 
 const LOCALE = 'es';
 const FOOD_BANK = { id: 1, name: 'Riverside Food Bank', sourceLocale: 'en' };
 const TENANTS = { id: 2, name: 'Tenant Help Line', sourceLocale: 'en' };
+const ORGS: Record<number, CardOrg> = {
+  1: { id: 11, name: 'Riverside Food Bank', type: 'nonprofit', verified: true, description: 'Groceries for 3,000 families a month' },
+  2: { id: 12, name: 'Eastside Tenants Union', type: 'small_org', verified: false, description: 'Free advice for renters' },
+};
 
 /** A fake phone screen with one line highlighted, so the screenshot view has something real to show. */
 function shot(id: number, title: string, lines: string[], highlight: number): QueueItem['screenshot'] {
@@ -101,6 +106,7 @@ const byKey = new Map<number, { project: typeof FOOD_BANK; item: QueueItem }>(
 );
 
 let sessions = 0;
+const settings: VolunteerSettings = { nonprofitsOnly: false, actions: { flag: true, report: true } };
 const stats: StatsResponse = {
   xp: { accepted: 140, pending: 20 },
   today: { accepted: 0, pending: 0 },
@@ -119,11 +125,13 @@ function award(points: number, status: 'pending' | 'accepted', project: typeof F
 }
 
 export const mockClient: VolunteerClient = {
-  async session(size = 5) {
+  async session(size = 5, nonprofitsOnly) {
     await wait();
     const n = sessions++;
-    const t = rotate(translatePool, n * 3);
-    const r = rotate(reviewPool, n * 2);
+    if (nonprofitsOnly !== undefined) settings.nonprofitsOnly = nonprofitsOnly;
+    const keep = ([p]: [typeof FOOD_BANK, QueueItem]) => !settings.nonprofitsOnly || ORGS[p.id].verified;
+    const t = rotate(translatePool, n * 3).filter(keep);
+    const r = rotate(reviewPool, n * 2).filter(keep);
     const cards: Card[] = [];
     // Alternate, starting with Translate, like the server.
     let ti = 0;
@@ -131,7 +139,7 @@ export const mockClient: VolunteerClient = {
     while (cards.length < size && (ti < t.length || ri < r.length)) {
       const translate = (cards.length % 2 === 0 && ti < t.length) || ri >= r.length;
       const [project, it] = translate ? t[ti++] : r[ri++];
-      cards.push({ id: `${it.current ? 'review' : 'translate'}:${it.keyId}:${LOCALE}`, type: it.current ? 'review' : 'translate', project, locale: LOCALE, item: it });
+      cards.push({ id: `${it.current ? 'review' : 'translate'}:${it.keyId}:${LOCALE}`, type: it.current ? 'review' : 'translate', project, org: ORGS[project.id], locale: LOCALE, item: it });
     }
     return { cards, empty: cards.length ? null : 'nothing_to_do' };
   },
@@ -139,6 +147,27 @@ export const mockClient: VolunteerClient = {
   async stats() {
     await wait(200);
     return structuredClone(stats);
+  },
+
+  async settings() {
+    await wait(100);
+    return structuredClone(settings);
+  },
+
+  async setNonprofitsOnly(on) {
+    await wait(100);
+    settings.nonprofitsOnly = on;
+    return structuredClone(settings);
+  },
+
+  async flag() {
+    await wait();
+    return { status: 'review', review: { reviews: 1, approvals: 0, flags: 1, needed: 5, escalated: false }, xp: { points: XP.review, status: 'pending' } };
+  },
+
+  async report() {
+    await wait();
+    return { ok: true, paused: false };
   },
 
   async save(keyId, locale, text) {

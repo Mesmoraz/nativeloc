@@ -5,7 +5,8 @@ import { ChipText } from '../components';
 import { formLabel, isEmptyModel, LengthMeter, noGrammarly, sourceExample } from '../localizer/Workspace';
 import { languageName, nativeLanguageName, textDirection } from '../types';
 import type { VolunteerClient } from './client';
-import type { Card, XpAward } from './types';
+import type { CardOrg, FlagReason, ReportReason } from '../contracts';
+import type { Card, VolunteerSettings, XpAward } from './types';
 
 export interface CardResult {
   outcome: 'done' | 'skipped';
@@ -16,6 +17,8 @@ interface CardProps {
   card: Card;
   client: VolunteerClient;
   onDone: (r: CardResult) => void;
+  /** Card actions this server offers (from /volunteer/settings); hidden until the other pieces' routes exist. */
+  actions: VolunteerSettings['actions'];
 }
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -44,6 +47,96 @@ function CardHead({ card, kind }: { card: Card; kind: string }) {
         {card.project.name} · {nativeLanguageName(card.locale)}
       </span>
     </div>
+  );
+}
+
+/** "Nonprofit", "Community group" or "Individual": unverified nonprofits are served as community groups. */
+export function orgKind(org: CardOrg): string {
+  if (org.verified) return 'Nonprofit';
+  return org.type === 'individual' ? 'Individual' : 'Community group';
+}
+
+/** Who this card helps. */
+function OrgLine({ org }: { org: CardOrg }) {
+  return (
+    <div className="v-org">
+      <div className="v-org-name">
+        <span>{org.name}</span>
+        <span className={`v-org-kind ${org.verified ? 'verified' : ''}`}>
+          {org.verified ? '✓ ' : ''}
+          {orgKind(org)}
+        </span>
+      </div>
+      {org.description && <p className="v-org-about small muted">{org.description}</p>}
+    </div>
+  );
+}
+
+const FLAG_REASONS: { id: FlagReason; label: string }[] = [
+  { id: 'meaning', label: 'Wrong meaning' },
+  { id: 'grammar', label: 'Grammar' },
+  { id: 'tone', label: 'Tone' },
+  { id: 'offensive', label: 'Offensive' },
+];
+const REPORT_REASONS: { id: ReportReason; label: string }[] = [
+  { id: 'spam', label: 'Spam' },
+  { id: 'commercial', label: 'Selling something' },
+  { id: 'harmful', label: 'Harmful' },
+];
+
+/** A row of reason chips; picking one sends it. */
+function ReasonPicker<R extends string>({ title, reasons, busy, note, onPick, onCancel }: { title: string; reasons: { id: R; label: string }[]; busy: boolean; note: string; onPick: (r: R) => void; onCancel: () => void }) {
+  return (
+    <div className="v-reasons" role="group" aria-label={title} dir="ltr">
+      <div className="small">{title}</div>
+      <div className="v-reason-row">
+        {reasons.map((r) => (
+          <button key={r.id} type="button" className="chip" disabled={busy} onClick={() => onPick(r.id)}>
+            {r.label}
+          </button>
+        ))}
+        <button type="button" className="chip ghost" disabled={busy} onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+      {note && (
+        <div className="alert error" role="alert">
+          {note}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** "Report this project" (2B): spam, selling, or harmful. The card is skipped once the report is in. */
+function ReportLink({ card, client, onDone }: Pick<CardProps, 'card' | 'client' | 'onDone'>) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+  const [sent, setSent] = useState(false);
+  async function send(reason: ReportReason) {
+    setBusy(true);
+    setNote('');
+    try {
+      await client.report(card.project.id, card.item.keyId, reason);
+      setSent(true);
+      setTimeout(() => onDone({ outcome: 'skipped', xp: null }), 900);
+    } catch (e) {
+      setNote(e instanceof ApiError ? e.message : 'Could not send the report. Try again.');
+      setBusy(false);
+    }
+  }
+  if (sent)
+    return (
+      <p className="small muted v-report" role="status">
+        Thanks. Our team will take a look.
+      </p>
+    );
+  if (open) return <ReasonPicker title="What's wrong with this project?" reasons={REPORT_REASONS} busy={busy} note={note} onPick={(r) => void send(r)} onCancel={() => setOpen(false)} />;
+  return (
+    <button type="button" className="v-report small" onClick={() => setOpen(true)}>
+      Report this project
+    </button>
   );
 }
 
@@ -266,16 +359,18 @@ function useTranslation(card: Card, client: VolunteerClient, onDone: (r: CardRes
   return { model, setModel, issues: serverIssues ?? live, note, saving, label: saved ? 'Saved ✓' : 'Saving…', submit };
 }
 
-export function TranslateCard({ card, client, onDone }: CardProps) {
+export function TranslateCard({ card, client, onDone, actions }: CardProps) {
   const t = useTranslation(card, client, onDone, false);
   useSubmitKey(() => void t.submit());
   return (
     <>
       <div className="v-body">
         <CardHead card={card} kind="Translate" />
+        <OrgLine org={card.org} />
         <SourceBlock item={card.item} source={card.project.sourceLocale} />
         <Context item={card.item} />
         <Editor item={card.item} source={card.project.sourceLocale} locale={card.locale} model={t.model} setModel={t.setModel} issues={t.issues} note={t.note} />
+        {actions.report && <ReportLink card={card} client={client} onDone={onDone} />}
       </div>
       <div className="v-actions">
         <button className="v-btn ghost" onClick={() => onDone({ outcome: 'skipped', xp: null })} disabled={t.saving}>
@@ -289,12 +384,14 @@ export function TranslateCard({ card, client, onDone }: CardProps) {
   );
 }
 
-export function ReviewCard({ card, client, onDone }: CardProps) {
+export function ReviewCard({ card, client, onDone, actions }: CardProps) {
   const { item, locale } = card;
   const [improving, setImproving] = useState(false);
   const [approving, setApproving] = useState(false);
   const [approved, setApproved] = useState(false);
   const [note, setNote] = useState('');
+  const [flagging, setFlagging] = useState(false);
+  const [flagBusy, setFlagBusy] = useState(false);
   const t = useTranslation(card, client, onDone, true);
   const current = item.template;
   const forms = current.kind === 'plural' ? Object.keys(current.forms) : [];
@@ -312,12 +409,24 @@ export function ReviewCard({ card, client, onDone }: CardProps) {
       setApproving(false);
     }
   }
+  async function flag(reason: FlagReason) {
+    setFlagBusy(true);
+    setNote('');
+    try {
+      const r = await client.flag(item.keyId, locale, reason);
+      onDone({ outcome: 'done', xp: r.xp });
+    } catch (e) {
+      setNote(e instanceof ApiError ? e.message : 'Could not send the flag. Try again.');
+      setFlagBusy(false);
+    }
+  }
   useSubmitKey(() => void (improving ? t.submit() : approve()));
 
   return (
     <>
       <div className="v-body">
         <CardHead card={card} kind="Review" />
+        <OrgLine org={card.org} />
         <SourceBlock item={item} source={card.project.sourceLocale} />
         <Context item={item} />
         {improving ? (
@@ -362,6 +471,14 @@ export function ReviewCard({ card, client, onDone }: CardProps) {
             <p className="small muted" dir="ltr" style={{ margin: 0 }}>
               Does it say the same thing, and read naturally? Approve it, or improve the wording.
             </p>
+            {actions.flag &&
+              (flagging ? (
+                <ReasonPicker title="What's wrong with it?" reasons={FLAG_REASONS} busy={flagBusy} note="" onPick={(r) => void flag(r)} onCancel={() => setFlagging(false)} />
+              ) : (
+                <button type="button" className="v-flag small" dir="ltr" onClick={() => setFlagging(true)} disabled={approving}>
+                  ⚑ Flag a problem
+                </button>
+              ))}
             {note && (
               <div className="alert error" dir="ltr" role="alert">
                 {note}
@@ -369,6 +486,7 @@ export function ReviewCard({ card, client, onDone }: CardProps) {
             )}
           </section>
         )}
+        {actions.report && <ReportLink card={card} client={client} onDone={onDone} />}
       </div>
       <div className="v-actions">
         {improving ? (

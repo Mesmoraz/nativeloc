@@ -41,6 +41,8 @@ object NativeLoc {
 
     @Volatile private var sourceLocale: String? = null
     @Volatile private var etag: String? = null
+    /** Per-locale review quality from the last manifest download (not cached across restarts). */
+    @Volatile private var qualities: Map<String, Quality> = emptyMap()
 
     private val bundles = ConcurrentHashMap<String, Map<String, String>>()
     private val shas = ConcurrentHashMap<String, String>()
@@ -122,6 +124,18 @@ object NativeLoc {
         }
     }
 
+    /**
+     * How the text for [tag] was reviewed: "verified" ("Checked by N native speakers") or "community"
+     * ("Community-reviewed, not verified"). null for the source language or before the first download.
+     */
+    fun quality(tag: String = locale): Quality? = qualities[tag]
+
+    data class Quality(val quality: String, val reviewers: Int) {
+        val label: String
+            get() = if (quality == "community") "Community-reviewed, not verified"
+            else "Checked by $reviewers native speaker${if (reviewers == 1) "" else "s"}"
+    }
+
     // ---------------------------------------------------------------- network & cache
 
     /** Blocking check for a newer version; call off the main thread. Returns true if strings changed. */
@@ -134,6 +148,11 @@ object NativeLoc {
             val manifest = JSONObject(conn.inputStream.bufferedReader().readText())
             sourceLocale = manifest.getString("sourceLocale")
             val locales = manifest.getJSONObject("locales")
+            qualities = locales.keys().asSequence().mapNotNull { loc ->
+                val info = locales.getJSONObject(loc)
+                val q = info.optString("quality", "")
+                if (q.isEmpty() || loc == sourceLocale) null else loc to Quality(q, info.optInt("reviewers", 0))
+            }.toMap()
             var changed = false
             for (loc in wanted()) {
                 val info = locales.optJSONObject(loc) ?: continue

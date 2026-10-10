@@ -1,12 +1,14 @@
 import type { Placeholder } from '@nativeloc/core';
 import { Fragment } from 'react';
+import './community/community.css';
 import type { LocaleProgressLike } from './types';
 
 export function ProgressBar({ p }: { p: LocaleProgressLike }) {
   const pct = (n: number) => `${p.total ? (n / p.total) * 100 : 0}%`;
   return (
-    <div className="progress" title={`${p.approved} approved · ${p.review} in review · ${p.outdated} need update · ${p.todo} to do`}>
+    <div className="progress" title={`${p.approved} approved · ${p.ready ? `${p.ready} ready to publish · ` : ''}${p.review} in review · ${p.outdated} need update · ${p.todo} to do`}>
       <span className="p-approved" style={{ width: pct(p.approved) }} />
+      {!!p.ready && <span className="p-ready" style={{ width: pct(p.ready) }} />}
       <span className="p-review" style={{ width: pct(p.review) }} />
       <span className="p-outdated" style={{ width: pct(p.outdated) }} />
     </div>
@@ -38,6 +40,6 @@ export function ChipText({ text, placeholders, pound = false, num, locale }: { t
 
 export function StatusBadge({ status }: { status: string | null | undefined }) {
   if (!status) return <span className="badge">to do</span>;
-  const label = { approved: 'approved', review: 'in review', outdated: 'needs update' }[status] ?? status;
+  const label = { approved: 'approved', ready: 'ready to publish', review: 'in review', outdated: 'needs update' }[status] ?? status;
   return <span className={`badge ${status}`}>{label}</span>;
 }

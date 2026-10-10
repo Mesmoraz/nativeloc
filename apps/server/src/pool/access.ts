@@ -1,13 +1,34 @@
 import type { Access } from '../auth.js';
-import type { DB, ProjectRow, UserRow } from '../db.js';
+import type { DB, OrgRow, ProjectRow, UserRow } from '../db.js';
+import { projectLocales } from '../services/progress.js';
+
+// Owned by Segment 2 piece 2E (open volunteer pool).
+
+/** What the pool lets a non-member do: see the project and work on it. Never export, push or admin. */
+const POOL_ACCESS: Access[] = ['read', 'translate', 'review'];
+
+/** Public work that moderation approved. Private, not yet submitted, pending and rejected projects stay members-only. */
+export const inOpenPool = (project: ProjectRow) => project.visibility === 'public' && project.moderation === 'approved';
 
 /**
- * Owned by Segment 2 piece 2E (open volunteer pool).
- *
  * projectAccess calls this when the user has no membership in the project's org. Return the role they act with
  * ('localizer': translate, and review as their trust tier allows) to let them in, or null for "Project not found".
- * Until 2E: nobody outside the org gets in. 2E: public projects with moderation 'approved', in the user's languages.
+ * Public, approved projects that want at least one of the user's languages let anyone in as a localizer.
  */
-export function openPoolRole(_db: DB, _user: UserRow, _project: ProjectRow, _access?: Access): 'localizer' | null {
-  return null;
+export function openPoolRole(db: DB, user: UserRow, project: ProjectRow, access: Access = 'read'): 'localizer' | null {
+  if (!POOL_ACCESS.includes(access) || !inOpenPool(project)) return null;
+  const mine = JSON.parse(user.locales) as string[];
+  return projectLocales(db, project.id).some((l) => mine.includes(l)) ? 'localizer' : null;
 }
+
+/** A nonprofit staff checked. Until then a nonprofit is served as a community org (plan §2). */
+export const isVerifiedNonprofit = (org: Pick<OrgRow, 'type' | 'verification'>) => org.type === 'nonprofit' && org.verification === 'verified';
+
+/**
+ * Which orgs the volunteer's "Nonprofits only" filter keeps. Decision point: verified nonprofits only, so an org
+ * can't get into the filtered pool just by calling itself a nonprofit. Change it here if unverified ones should count.
+ */
+export const passesNonprofitsOnly = isVerifiedNonprofit;
+
+/** Session priority after urgent strings: verified nonprofits (0), then community orgs (1). */
+export const poolRank = (org: Pick<OrgRow, 'type' | 'verification'>) => (isVerifiedNonprofit(org) ? 0 : 1);

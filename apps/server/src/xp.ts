@@ -78,6 +78,65 @@ export function onVote(db: DB, userId: number, s: StringRef, approved: boolean):
   return { points: XP.review, status: 'accepted' };
 }
 
+// ---------- community review (review_mode 'community'; see services/review.ts) ----------
+// Peers' pending XP waits for the outcome instead of being voided when the text changes: at consensus a review
+// pays if it matched the final text (an approval of it, or a flag on wording that didn't survive).
+
+/**
+ * Community mode: a translation was saved with `status`. Someone else's pending translation was replaced, so it's
+ * voided; pending review XP is left for settleCommunity. `finalText` is the saved text (used when it's approved).
+ */
+export function onCommunitySave(db: DB, userId: number, s: StringRef, status: 'review' | 'approved', finalText: string): XpAward {
+  run(
+    db,
+    `UPDATE xp_events SET status = 'voided', settled_at = CURRENT_TIMESTAMP
+     WHERE key_id = ? AND locale = ? AND status = 'pending' AND kind = 'translate' AND user_id IS NOT ?`,
+    s.keyId, s.locale, userId,
+  );
+  const existing = pendingOf(db, userId, 'translate', s);
+  if (status === 'approved') {
+    settleCommunity(db, s, finalText);
+    return existing ? { points: XP.translate, status: 'accepted' } : book(db, userId, 'translate', s, 'accepted');
+  }
+  return existing ? null : book(db, userId, 'translate', s, 'pending');
+}
+
+/**
+ * A counted community review (approval or flag). Review XP is earned once per person per string: a second review
+ * after an edit or a send-back doesn't book again.
+ */
+export function onCommunityReview(db: DB, userId: number, s: StringRef): XpAward {
+  const had = get(db, "SELECT 1 FROM xp_events WHERE user_id = ? AND kind = 'review' AND key_id = ? AND locale = ? AND status <> 'voided'", userId, s.keyId, s.locale);
+  return had ? null : book(db, userId, 'review', s, 'pending');
+}
+
+/**
+ * Consensus (status 'ready') or an outright approval of `finalText`: the pending translation is accepted, and each
+ * pending review is accepted if it matched the outcome (approved the final text, or flagged other wording), else voided.
+ */
+export function settleCommunity(db: DB, s: StringRef, finalText: string) {
+  run(
+    db,
+    `UPDATE xp_events SET settled_at = CURRENT_TIMESTAMP, status = CASE WHEN EXISTS (
+       SELECT 1 FROM reviews r WHERE r.key_id = xp_events.key_id AND r.locale = xp_events.locale AND r.user_id = xp_events.user_id AND r.counts = 1
+         AND ((r.kind = 'approve' AND r.current = 1 AND r.text = ?) OR (r.kind = 'flag' AND r.text <> ?))
+     ) THEN 'accepted' ELSE 'voided' END
+     WHERE key_id = ? AND locale = ? AND status = 'pending' AND kind = 'review'`,
+    finalText, finalText, s.keyId, s.locale,
+  );
+  settle(db, s);
+}
+
+/** What `userId` holds on a string right now (for responses after settling). */
+export function awardOf(db: DB, userId: number, kind: XpKind, s: StringRef): XpAward {
+  const r = get<{ points: number; status: 'pending' | 'accepted' }>(
+    db,
+    "SELECT points, status FROM xp_events WHERE user_id = ? AND kind = ? AND key_id = ? AND locale = ? AND status <> 'voided' ORDER BY id DESC LIMIT 1",
+    userId, kind, s.keyId, s.locale,
+  );
+  return r ? { points: r.points, status: r.status } : null;
+}
+
 export interface XpTotals {
   accepted: number;
   pending: number;

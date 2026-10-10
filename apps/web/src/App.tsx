@@ -38,15 +38,21 @@ export function TopBar({ children }: { children?: React.ReactNode }) {
       </Link>
       {children ?? <span className="spacer" />}
       {session && (
-        <div className="row hide-sm small">
-          <span className="muted">
+        <div className="row small" style={{ flexWrap: 'nowrap' }}>
+          <span className="muted hide-sm">
             {session.user.name}
             {session.org ? ` · ${session.org.name}` : ''}
           </span>
-          <AccountMenu />
-          <button className="ghost" onClick={logout}>
+          {session.user.isStaff && (
+            <Link to="/staff" className="hide-sm">
+              Staff
+            </Link>
+          )}
+          <button className="ghost hide-sm" onClick={logout}>
             Sign out
           </button>
+          {/* Shown at every width: the org switcher, and sign out on phones. */}
+          <AccountMenu />
         </div>
       )}
     </header>

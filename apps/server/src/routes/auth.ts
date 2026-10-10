@@ -2,8 +2,10 @@ import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { actorOf, createSession, hashPassword, HttpError, membershipsOf, type UserActor, randomToken, requireMember, requireUser, SESSION_COOKIE, sha256, verifyPassword } from '../auth.js';
 import { addMembership, all, get, getUser, memberOf, ROLES, run, tx, USER_COLUMNS, type DB, type OrgRow, type Role, type UserRow } from '../db.js';
-import { setTier, tiersOf, TIERS, vouchFor, type Tier } from '../trust.js';
+import { setTier, tierOf, tiersOf, TIERS, vouchFor, type Tier } from '../trust.js';
 import { checkLocale } from '../util.js';
+import { orgMayVouch } from '../signup/gate.js';
+import { isEmailVerified, sendVerification } from '../signup/mailer.js';
 
 /**
  * `role` is the user's role in `orgId` (default: their first org), or null if they have no role there.
@@ -12,7 +14,42 @@ import { checkLocale } from '../util.js';
 export function publicUser(db: DB, u: UserRow, orgId?: number | null) {
   const memberships = membershipsOf(db, u.id);
   const role = (orgId == null ? memberships[0] : memberships.find((m) => m.orgId === orgId))?.role ?? null;
-  return { id: u.id, email: u.email, name: u.name, role, locales: JSON.parse(u.locales) as string[], tiers: tiersOf(db, u), isStaff: !!u.is_staff };
+  return {
+    id: u.id,
+    email: u.email,
+    name: u.name,
+    role,
+    locales: JSON.parse(u.locales) as string[],
+    tiers: tiersOf(db, u),
+    isStaff: !!u.is_staff,
+    emailVerified: isEmailVerified(db, u.id),
+  };
+}
+
+/** GET /api/v1/me: the signed-in user, the org this sign-in works in (`org`, null when they have none) and all their orgs. */
+export function meResponse(db: DB, actor: UserActor) {
+  const orgs = actor.memberships.map((m) => ({ ...orgJson(get<OrgRow>(db, 'SELECT * FROM orgs WHERE id = ?', m.orgId)!), role: m.role }));
+  return { user: publicUser(db, actor.user, actor.current?.orgId), org: orgs.find((o) => o.id === actor.current?.orgId) ?? null, orgs };
+}
+
+/** Makes `orgId` the org this sign-in works in. */
+export const setCurrentOrg = (db: DB, actor: UserActor, orgId: number) => run(db, 'UPDATE sessions SET org_id = ? WHERE token_hash = ?', orgId, actor.sessionHash);
+
+/** A new account from an invite or join link. Unverified accounts get the confirmation email. */
+async function createAccount(db: DB, fields: { email: string; name: string; password: string; locales: string[] }, verified: boolean, setup: (id: number) => void) {
+  const id = tx(db, () => {
+    const r = run(
+      db,
+      'INSERT INTO users (email, name, password_hash, locales, email_verified) VALUES (?, ?, ?, ?, ?)',
+      fields.email, fields.name, hashPassword(fields.password), JSON.stringify(fields.locales), verified ? 1 : 0,
+    );
+    const id = Number(r.lastInsertRowid);
+    setup(id);
+    return id;
+  });
+  const user = getUser(db, id)!;
+  if (!verified) await sendVerification(db, user);
+  return user;
 }
 
 export function orgJson(o: OrgRow) {
@@ -35,11 +72,7 @@ export function authRoutes(app: FastifyInstance, db: DB) {
     return { ok: true };
   });
 
-  /** The signed-in user, the org this sign-in works in (`org`, null when they have none) and all their orgs. */
-  const me = (actor: UserActor) => {
-    const orgs = actor.memberships.map((m) => ({ ...orgJson(get<OrgRow>(db, 'SELECT * FROM orgs WHERE id = ?', m.orgId)!), role: m.role }));
-    return { user: publicUser(db, actor.user, actor.current?.orgId), org: orgs.find((o) => o.id === actor.current?.orgId) ?? null, orgs };
-  };
+  const me = (actor: UserActor) => meResponse(db, actor);
 
   app.get('/api/v1/me', async (req) => me(requireUser(db, req)));
 
@@ -48,7 +81,7 @@ export function authRoutes(app: FastifyInstance, db: DB) {
     const actor = requireUser(db, req);
     const orgId = Number(req.body?.orgId);
     if (!actor.memberships.some((m) => m.orgId === orgId)) throw new HttpError(404, 'You are not a member of that organization.');
-    run(db, 'UPDATE sessions SET org_id = ? WHERE token_hash = ?', orgId, actor.sessionHash);
+    setCurrentOrg(db, actor, orgId);
     return me(requireUser(db, req));
   });
 
@@ -74,24 +107,46 @@ export function authRoutes(app: FastifyInstance, db: DB) {
     return { org: inv.org, role: inv.role, locales: JSON.parse(inv.locales), email: inv.email };
   });
 
+  // Signed in: the invite adds a membership to the existing account. Signed out: it creates an account (409 if the
+  // email has one: sign in first). Only orgs that may vouch (signup/gate.ts) raise the invitee's trust.
   app.post<{ Params: { token: string }; Body: { name?: string; email?: string; password?: string } }>('/api/v1/invites/:token/accept', async (req, reply) => {
     const inv = get<{ org_id: number; role: Role; locales: string; email: string | null; expires_at: number; used_at: string | null }>(db, 'SELECT * FROM invites WHERE token_hash = ?', sha256(req.params.token));
     if (!inv || inv.used_at || inv.expires_at < Date.now()) throw new HttpError(404, 'This invite link is no longer valid.');
+    const invLocales = JSON.parse(inv.locales) as string[];
+    const useInvite = () => run(db, 'UPDATE invites SET used_at = CURRENT_TIMESTAMP WHERE token_hash = ?', sha256(req.params.token));
+    const vouch = (userId: number) => {
+      if (orgMayVouch(db, inv.org_id)) vouchFor(db, userId, inv.role, invLocales, 'invited by an admin');
+    };
+
+    const actor = actorOf(db, req);
+    if (actor?.kind === 'user') {
+      if (inv.email && inv.email.toLowerCase() !== actor.user.email.toLowerCase()) throw new HttpError(403, `This invite is for ${inv.email}. Sign in with that account to accept it.`);
+      if (memberOf(db, actor.user, inv.org_id)) throw new HttpError(409, "You're already on this team.");
+      const added = invLocales.filter((l) => !actor.locales.includes(l));
+      tx(db, () => {
+        addMembership(db, actor.user.id, inv.org_id, inv.role);
+        run(db, 'UPDATE users SET locales = ? WHERE id = ?', JSON.stringify([...actor.locales, ...added]), actor.user.id);
+        vouch(actor.user.id);
+        useInvite();
+        setCurrentOrg(db, actor, inv.org_id);
+      });
+      return { user: publicUser(db, getUser(db, actor.user.id)!, inv.org_id) };
+    }
+
     const name = req.body?.name?.trim();
     const email = (inv.email ?? req.body?.email ?? '').trim();
     const password = req.body?.password ?? '';
     if (!name || !/^\S+@\S+$/.test(email)) throw new HttpError(400, 'Please enter your name and email.');
     if (password.length < 8) throw new HttpError(400, 'Password must be at least 8 characters.');
-    if (get(db, 'SELECT 1 FROM users WHERE email = ?', email)) throw new HttpError(409, 'An account with that email already exists.');
-    const userId = tx(db, () => {
-      const r = run(db, 'INSERT INTO users (email, name, password_hash, locales) VALUES (?, ?, ?, ?)', email, name, hashPassword(password), inv.locales);
-      addMembership(db, Number(r.lastInsertRowid), inv.org_id, inv.role);
-      vouchFor(db, Number(r.lastInsertRowid), inv.role, JSON.parse(inv.locales), 'invited by an admin');
-      run(db, 'UPDATE invites SET used_at = CURRENT_TIMESTAMP WHERE token_hash = ?', sha256(req.params.token));
-      return Number(r.lastInsertRowid);
+    if (get(db, 'SELECT 1 FROM users WHERE email = ?', email)) throw new HttpError(409, 'An account with that email already exists. Sign in, then open this link again.');
+    // An invite to a named address confirms that address; one the invitee typed in still needs the emailed link.
+    const user = await createAccount(db, { email, name, password, locales: invLocales }, !!inv.email, (id) => {
+      addMembership(db, id, inv.org_id, inv.role);
+      vouch(id);
+      useInvite();
     });
-    createSession(db, reply, userId);
-    return { user: publicUser(db, getUser(db, userId)!) };
+    createSession(db, reply, user.id);
+    return { user: publicUser(db, user) };
   });
 
   // ----- volunteer join links (reusable; anyone with the link signs up as a localizer) -----
@@ -132,10 +187,11 @@ export function authRoutes(app: FastifyInstance, db: DB) {
        WHERE p.org_id = ? AND pl.locale IN (${link.localeList.map(() => '?').join(',')}) ORDER BY p.name`,
       link.org_id, ...link.localeList,
     );
+    // `me`: whoever is signed in (they join with that account); `member`: they already belong to this org.
     const actor = actorOf(db, req);
-    const member = actor?.kind === 'user' ? memberOf(db, actor.user, link.org_id) : null;
-    const me = member ? publicUser(db, member, link.org_id) : null;
-    return { org: link.org, locales: link.localeList, projects: [...new Set(projects.map((p) => p.name))], me };
+    const me = actor?.kind === 'user' ? publicUser(db, actor.user, link.org_id) : null;
+    const member = actor?.kind === 'user' && !!memberOf(db, actor.user, link.org_id);
+    return { org: link.org, locales: link.localeList, projects: [...new Set(projects.map((p) => p.name))], me, member };
   });
 
   app.post<{ Params: { code: string }; Body: { name?: string; email?: string; password?: string; locales?: string[] } }>('/api/v1/join/:code', async (req, reply) => {
@@ -143,15 +199,19 @@ export function authRoutes(app: FastifyInstance, db: DB) {
     const locales = (req.body?.locales ?? []).filter((l) => link.localeList.includes(l));
     if (!locales.length) throw new HttpError(400, 'Pick the language you will translate into.');
 
-    // Already a member of this org: just add the languages. (Joining another org with an existing account is 2A's.)
+    // Signed in: join the org as a localizer if not a member yet, and add the languages.
     const actor = actorOf(db, req);
-    const member = actor?.kind === 'user' ? memberOf(db, actor.user, link.org_id) : null;
-    if (actor?.kind === 'user' && member) {
+    if (actor?.kind === 'user') {
+      const member = memberOf(db, actor.user, link.org_id);
       const merged = [...new Set([...actor.locales, ...locales])];
       tx(db, () => {
+        if (!member) addMembership(db, actor.user.id, link.org_id, 'localizer');
         run(db, 'UPDATE users SET locales = ? WHERE id = ?', JSON.stringify(merged), actor.user.id);
         // A language added through a public link starts at 'new' until the placement check.
-        if (member.role === 'localizer') for (const l of locales.filter((x) => !actor.locales.includes(x))) setTier(db, actor.user.id, l, 'new', 'joined from sign-up link');
+        if ((member?.role ?? 'localizer') === 'localizer') {
+          for (const l of locales.filter((x) => !actor.locales.includes(x))) setTier(db, actor.user.id, l, 'new', 'joined from sign-up link');
+        }
+        if (!member) setCurrentOrg(db, actor, link.org_id);
       });
       return { user: publicUser(db, getUser(db, actor.user.id)!, link.org_id) };
     }
@@ -162,15 +222,13 @@ export function authRoutes(app: FastifyInstance, db: DB) {
     if (!name || !/^\S+@\S+$/.test(email)) throw new HttpError(400, 'Please enter your name and email.');
     if (password.length < 8) throw new HttpError(400, 'Password must be at least 8 characters.');
     if (get(db, 'SELECT 1 FROM users WHERE email = ?', email)) throw new HttpError(409, 'An account with that email already exists. Sign in, then open this link again to add the language.');
-    const userId = tx(db, () => {
-      const r = run(db, 'INSERT INTO users (email, name, password_hash, locales) VALUES (?, ?, ?, ?)', email, name, hashPassword(password), JSON.stringify(locales));
-      const id = Number(r.lastInsertRowid);
+    // Join links are shared publicly, so the address isn't confirmed until the emailed link is opened.
+    const user = await createAccount(db, { email, name, password, locales }, false, (id) => {
       addMembership(db, id, link.org_id, 'localizer');
       for (const l of locales) setTier(db, id, l, 'new', 'joined from sign-up link');
-      return id;
     });
-    createSession(db, reply, userId);
-    return { user: publicUser(db, getUser(db, userId)!) };
+    createSession(db, reply, user.id);
+    return { user: publicUser(db, user) };
   });
 
   // ----- team -----
@@ -190,17 +248,27 @@ export function authRoutes(app: FastifyInstance, db: DB) {
     if (!target) throw new HttpError(404, 'User not found.');
     const role = req.body?.role ?? target.role;
     if (!ROLES.includes(role)) throw new HttpError(400, 'Unknown role.');
-    const locales = req.body?.locales ? JSON.stringify(req.body.locales.map(checkLocale)) : target.locales;
+    const locales = req.body?.locales ? JSON.stringify([...new Set(req.body.locales.map(checkLocale))]) : target.locales;
+    const before = JSON.parse(target.locales) as string[];
+    const after = JSON.parse(locales) as string[];
+    // Languages and tiers belong to the person and count in every org they help. An admin may add languages and
+    // vouch (if their org may vouch), but only someone's sole org may take a language away or lower a tier.
+    const elsewhere = !!get(db, 'SELECT 1 FROM memberships WHERE user_id = ? AND org_id != ?', target.id, member.orgId);
+    const mayVouch = orgMayVouch(db, member.orgId);
+    if (elsewhere && before.some((l) => !after.includes(l))) throw new HttpError(403, `${target.name} also helps other organizations, so only they can remove a language.`);
+    const tiers = Object.entries(req.body?.tiers ?? {}).map(([l, t]) => [checkLocale(l), t] as const);
+    for (const [l, t] of tiers) {
+      if (!TIERS.includes(t)) throw new HttpError(400, 'Tier must be new, trusted or lead.');
+      const now = TIERS.indexOf(tierOf(db, target, l));
+      if (TIERS.indexOf(t) > now && !mayVouch) throw new HttpError(403, 'Your organization can place volunteers once NativeLoc has verified it.');
+      if (TIERS.indexOf(t) < now && elsewhere) throw new HttpError(403, `${target.name} also helps other organizations, so their level in ${l} can't be lowered here.`);
+    }
     tx(db, () => {
       addMembership(db, target.id, member.orgId, role);
       run(db, 'UPDATE users SET locales = ? WHERE id = ?', locales, target.id);
-      const added = (JSON.parse(locales) as string[]).filter((l) => !(JSON.parse(target.locales) as string[]).includes(l));
-      vouchFor(db, target.id, role, added, `added by ${member.name}`);
+      if (mayVouch) vouchFor(db, target.id, role, after.filter((l) => !before.includes(l)), `added by ${member.name}`);
       // Admins can place people directly, e.g. for an interpreter certification or a partner organization's vouch.
-      for (const [l, t] of Object.entries(req.body?.tiers ?? {})) {
-        if (!TIERS.includes(t)) throw new HttpError(400, 'Tier must be new, trusted or lead.');
-        setTier(db, target.id, checkLocale(l), t, req.body?.reason?.trim() || `set by ${member.name}`);
-      }
+      for (const [l, t] of tiers) setTier(db, target.id, l, t, req.body?.reason?.trim() || `set by ${member.name}`);
     });
     return { user: publicUser(db, getUser(db, target.id)!, member.orgId) };
   });

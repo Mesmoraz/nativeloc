@@ -21,6 +21,12 @@ async function login(email: string) {
   cookies[email] = `nl_sid=${c.value}`;
 }
 const as = (email: string) => ({ cookie: cookies[email] });
+/** Join-link accounts confirm their email before they translate (2A): open the link from the outbox. */
+async function confirmEmail(email: string) {
+  const body = (db.prepare("SELECT body FROM outbox WHERE to_email = ? AND kind = 'verify' ORDER BY id DESC LIMIT 1").get(email) as { body: string }).body;
+  const token = /token=([\w-]+)/.exec(body)![1];
+  expect((await app.inject({ method: 'POST', url: '/api/v1/auth/verify-email', payload: { token } })).statusCode).toBe(200);
+}
 const bearer = { authorization: `Bearer ${TOKEN}` };
 
 function multipart(fields: Record<string, string>, file: { name: string; type: string; data: Buffer }) {
@@ -180,7 +186,10 @@ describe('volunteers and peer review', () => {
   async function join(email: string, extra: Record<string, unknown> = {}) {
     const res = await app.inject({ method: 'POST', url: `/api/v1/join/${code}`, payload: { name: email.split('@')[0], email, password: 'pw-12345678', locales: ['es'], ...extra } });
     const c = res.cookies.find((x) => x.name === 'nl_sid');
-    if (c) cookies[email] = `nl_sid=${c.value}`;
+    if (c) {
+      cookies[email] = `nl_sid=${c.value}`;
+      await confirmEmail(email);
+    }
     return res;
   }
   const approve = (email: string) => app.inject({ method: 'POST', url: `/api/v1/translations/${keyId}/es/approve`, headers: as(email) });
@@ -258,6 +267,7 @@ describe('placement check', () => {
   async function join(email: string) {
     const res = await app.inject({ method: 'POST', url: `/api/v1/join/${code}`, payload: { name: email.split('@')[0], email, password: 'pw-12345678', locales: ['es'] } });
     cookies[email] = `nl_sid=${res.cookies.find((x) => x.name === 'nl_sid')!.value}`;
+    await confirmEmail(email);
     return res.json().user;
   }
   const start = (email: string) => app.inject({ method: 'POST', url: '/api/v1/placement/es/start', headers: as(email) });

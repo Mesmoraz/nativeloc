@@ -1,0 +1,8 @@
+/* Segment 2C: community review (Ready to publish, quality labels, the ready segment of progress bars). */
+.ready-texts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.ready-texts textarea { width: 100%; box-sizing: border-box; }
+@media (max-width: 640px) { .ready-texts { grid-template-columns: 1fr; } }
+.badge.ready, .badge.ready-disagree { background: var(--accent-soft); color: var(--accent); }
+.badge.ready-flag { background: var(--warn-soft); color: var(--warn); }
+.progress .p-ready { background: var(--accent); opacity: 0.45; }
+.quality { font-size: 0.85rem; color: var(--muted); }

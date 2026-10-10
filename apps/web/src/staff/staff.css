@@ -1,0 +1,4 @@
+.staff { max-width: 860px; margin: 0 auto; }
+.staff .row { gap: 8px; }
+.staff-sample { margin: 0; padding-left: 20px; color: var(--muted); font-size: 0.92rem; }
+.staff-sample li { margin: 2px 0; }

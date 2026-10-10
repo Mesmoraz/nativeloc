@@ -1,6 +1,7 @@
 // Segment 1 contract: the volunteer card flow. The server (apps/server/src/routes/volunteer.ts) returns these
 // shapes and the web app consumes them. See docs/segment-1-volunteer-cards.md. Change both sides together.
 import type { QueueItem } from '../api';
+import type { CardOrg } from '../contracts';
 
 export type CardType = 'translate' | 'review';
 
@@ -11,15 +12,25 @@ export interface Card {
   type: CardType;
   /** `sourceLocale` is the language the strings are written in (e.g. "en"), for labelling and plural examples. */
   project: { id: number; name: string; sourceLocale: string };
+  /** Who the card helps (Segment 2E). */
+  org: CardOrg;
   locale: string;
+  /** Urgent strings come first in a session. */
+  urgent?: boolean;
   item: QueueItem;
 }
 
-/** GET /api/v1/volunteer/session?size=5 (size 1–10, default 5). */
+/** GET /api/v1/volunteer/session?size=5&nonprofitsOnly=1 (size 1–10, default 5). Passing nonprofitsOnly saves it. */
 export interface SessionResponse {
   cards: Card[];
   /** Set when `cards` is empty, so the app can say why instead of showing a blank screen. */
   empty: null | 'no_languages' | 'nothing_to_do';
+}
+
+/** GET and PUT /api/v1/volunteer/settings. `actions`: which card actions this server offers (2C's Flag, 2B's Report). */
+export interface VolunteerSettings {
+  nonprofitsOnly: boolean;
+  actions: { flag: boolean; report: boolean };
 }
 
 export interface XpTotals {

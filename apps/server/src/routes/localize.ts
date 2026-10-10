@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { HttpError, projectAccess, requireUser } from '../auth.js';
 import { all, get, run, tx, type DB, type KeyRow } from '../db.js';
-import { approveTranslation, queue, saveTranslation } from '../services.js';
+import { approveTranslation, flagTranslation, queue, saveTranslation } from '../services.js';
 import { checkLocale, intParam } from '../util.js';
 import { voidPending } from '../xp.js';
 
@@ -43,6 +43,18 @@ export function localizeRoutes(app: FastifyInstance, db: DB) {
     const { project, member } = projectAccess(db, req, key.project_id, 'review', locale);
     if (!member) throw new HttpError(403, 'Sign in to review.');
     return approveTranslation(db, project, member, key.id, locale);
+  });
+
+  /**
+   * Community review's third choice (after Approve and Improve): flag the wording with a reason. Anyone who may
+   * translate the string can flag; flags from new volunteers are kept but don't count (NEW_VOLUNTEER_FLAGS_COUNT).
+   */
+  app.post<{ Params: { keyId: string; locale: string }; Body: { reason?: string; note?: string } }>('/api/v1/translations/:keyId/:locale/flag', async (req) => {
+    const locale = checkLocale(req.params.locale);
+    const key = keyProject(db, intParam(req.params.keyId));
+    const { project, member } = projectAccess(db, req, key.project_id, 'translate', locale);
+    if (!member) throw new HttpError(403, 'Sign in to review.');
+    return flagTranslation(db, project, member, key.id, locale, String(req.body?.reason ?? ''), typeof req.body?.note === 'string' ? req.body.note : undefined);
   });
 
   /**

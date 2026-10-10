@@ -45,6 +45,23 @@
 .v-kind.review { background: var(--chip); color: var(--chip-ink); }
 .v-where { color: var(--muted); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* Who the card helps, and the Flag / Report actions (Segment 2E). */
+.v-org { display: flex; flex-direction: column; gap: 2px; margin-top: -6px; }
+.v-org-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 8px; font-weight: 600; font-size: 0.95rem; }
+.v-org-kind { font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 99px; background: var(--chip); color: var(--chip-ink); }
+.v-org-kind.verified { background: var(--accent-soft); color: var(--accent); }
+.v-org-about { margin: 0; }
+.v-flag, .v-report { align-self: flex-start; background: none; border: none; box-shadow: none; padding: 4px 0; min-height: 0; color: var(--muted); text-decoration: underline; cursor: pointer; }
+.v-report { align-self: center; }
+.v-reasons { display: flex; flex-direction: column; gap: 8px; }
+.v-reason-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.v-reason-row .chip { min-height: 40px; padding: 0 14px; }
+.v-reason-row .chip.ghost { background: transparent; color: var(--muted); }
+
+/* "Nonprofits only" on the start screen. */
+.v-filter { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; }
+.v-filter input { width: 20px; height: 20px; flex: none; margin: 0; }
+
 .v-source, .v-translation, .v-editor {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 14px; box-shadow: var(--shadow);

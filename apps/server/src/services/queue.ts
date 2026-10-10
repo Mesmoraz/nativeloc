@@ -1,7 +1,7 @@
 import { displayKey, listPlaceholders, pluralExamples, targetTemplate, toEditorModel } from '@nativeloc/core';
 import { all, get, type DB, type KeyRow, type Member, type ProjectRow, type TranslationRow } from '../db.js';
 import { progress } from './progress.js';
-import { approvalCount, isPeer, PEER_FILTER } from './review.js';
+import { approvalCount, reviewFilter, reviewOf, sendBackNote } from './review.js';
 
 // Owned by Segment 2 piece 2C (community review engine): which strings a Translate or Review queue offers.
 // The volunteer session builder (2E) consumes queue() as is.
@@ -57,7 +57,10 @@ export function screenshotContext(db: DB, keyId: number) {
   };
 }
 
-/** Peer reviewers never see their own work, or work they already approved. */
+/**
+ * The strings a Translate or Review queue offers. Peer reviewers never see their own work, or work they already
+ * reviewed (reviewFilter). `exclude` drops keys; `keyId` asks for one key whatever its status.
+ */
 export function queue(
   db: DB,
   project: ProjectRow,
@@ -67,8 +70,8 @@ export function queue(
 ) {
   const limit = Math.min(opts.limit ?? 20, 50);
   const exclude = (opts.exclude ?? []).filter(Number.isFinite);
-  const peer = mode === 'review' && isPeer(db, project, locale, opts.viewer);
-  const statusFilter = mode === 'review' ? `t.status = 'review' ${peer ? PEER_FILTER : ''}` : "(t.status IS NULL OR t.status = 'outdated')";
+  const filter = mode === 'review' ? reviewFilter(db, project, locale, opts.viewer) : { sql: '', params: [] };
+  const statusFilter = mode === 'review' ? `t.status = 'review' ${filter.sql}` : "(t.status IS NULL OR t.status = 'outdated')";
   // Keys that share a screen come together, so localizers stay in one visual context.
   const keys = all<KeyRow & { t_text: string | null; t_status: TranslationRow['status'] | null }>(
     db,
@@ -80,7 +83,7 @@ export function queue(
      ORDER BY (SELECT MIN(screenshot_id) FROM screenshot_keys WHERE key_id = k.id) IS NULL,
               (SELECT MIN(screenshot_id) FROM screenshot_keys WHERE key_id = k.id), k.id
      LIMIT ?`,
-    locale, project.id, ...(opts.keyId ? [opts.keyId] : peer ? [opts.viewer!.id, opts.viewer!.id] : []), ...exclude, limit,
+    locale, project.id, ...(opts.keyId ? [opts.keyId] : filter.params), ...exclude, limit,
   );
 
   const pool = all<{ key_id: number; source: string; text: string }>(
@@ -90,6 +93,7 @@ export function queue(
     project.org_id, locale,
   );
   const examples = pluralExamples(locale);
+  const community = project.review_mode === 'community';
 
   const items = keys.map((k) => {
     const openQuestions = all<{ id: number; text: string; answer: string | null; user: string }>(
@@ -98,6 +102,8 @@ export function queue(
        WHERE q.key_id = ? AND q.locale = ? ORDER BY q.id DESC LIMIT 5`,
       k.id, locale,
     );
+    // Community review: where the string stands, and the poster's note when they sent it back.
+    const review = community && (k.t_status === 'review' || k.t_status === 'ready') ? reviewOf(db, k.id, locale) : null;
     return {
       keyId: k.id,
       key: displayKey(k.name),
@@ -113,7 +119,11 @@ export function queue(
       screenshot: screenshotContext(db, k.id),
       suggestions: suggestionsFor(pool, k),
       questions: openQuestions,
-      approvals: k.t_status === 'review' && project.peer_approvals > 0 ? { count: approvalCount(db, k.id, locale), needed: project.peer_approvals } : null,
+      approvals: review
+        ? k.t_status === 'review' ? { count: review.approvals, needed: review.needed } : null
+        : k.t_status === 'review' && project.peer_approvals > 0 ? { count: approvalCount(db, k.id, locale), needed: project.peer_approvals } : null,
+      review,
+      ...(community ? { sentBack: review ? sendBackNote(db, k.id, locale) : null } : {}),
     };
   });
   const p = progress(db, project.id).find((r) => r.locale === locale);

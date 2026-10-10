@@ -73,7 +73,6 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
 
   app.post<{ Body: { name?: string; sourceLocale?: string; locales?: string[]; requireReview?: boolean; visibility?: string; reviewMode?: string } }>('/api/v1/projects', async (req) => {
     const { member } = requireMember(db, req, ['admin']);
-    // integration: assertMayPost (2A)
     assertMayPost(db, member.orgId);
     const visibility = pick(req.body?.visibility, VISIBILITY, 'Visibility') ?? 'private';
     const reviewMode = pick(req.body?.reviewMode, REVIEW_MODES, 'Review mode') ?? defaultReviewMode(getOrg(db, member.orgId), visibility);

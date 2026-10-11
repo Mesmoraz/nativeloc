@@ -1,3 +1,4 @@
+import type { ProjectSharing, PublicUser, TranslationStatus } from './contracts';
 import type { EditorModel, Issue, LocaleProgressLike, Placeholder } from './types';
 
 export class ApiError extends Error {
@@ -23,19 +24,12 @@ export async function api<T>(path: string, opts: { method?: string; body?: unkno
   return data as T;
 }
 
-export interface User {
-  id: number;
-  email: string;
-  name: string;
-  role: 'admin' | 'reviewer' | 'localizer';
-  locales: string[];
-  /** Trust per language: 'new' volunteers translate; 'trusted' approvals count; a 'lead' approval is final. */
-  tiers: Record<string, Tier>;
-}
+/** The signed-in user; see PublicUser in contracts.ts. `role` is the role in the current org, null when they have none. */
+export type User = PublicUser;
 
 export type Tier = 'new' | 'trusted' | 'lead';
 
-export interface Project {
+export interface Project extends ProjectSharing {
   id: number;
   name: string;
   sourceLocale: string;
@@ -59,7 +53,7 @@ export interface QueueItem {
   prevSource: string | null;
   description: string | null;
   maxLength: number | null;
-  current: { text: string; status: 'outdated' | 'review' | 'approved' } | null;
+  current: { text: string; status: TranslationStatus } | null;
   sourceModel: EditorModel;
   template: EditorModel;
   placeholders: Placeholder[];

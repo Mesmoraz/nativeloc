@@ -1,0 +1,42 @@
+// The calls the card flow makes. In dev, `?mock=1` swaps in an in-memory stand-in (mock.ts) so the UI works
+// without the server; production builds never load it.
+import { api } from '../api';
+import type { FlagReason, FlagResponse, ReportReason, ReportResponse } from '../contracts';
+import type { SessionResponse, StatsResponse, VolunteerSettings, XpAward } from './types';
+
+export type SaveResult = { status: 'approved' | 'review' } & XpAward;
+export type ApproveResult = { status: 'approved' | 'review'; approvals?: { count: number; needed: number } } & XpAward;
+
+export interface VolunteerClient {
+  /** `nonprofitsOnly` given: filter and remember the choice; omitted: use the saved one. */
+  session(size?: number, nonprofitsOnly?: boolean): Promise<SessionResponse>;
+  stats(): Promise<StatsResponse>;
+  settings(): Promise<VolunteerSettings>;
+  setNonprofitsOnly(on: boolean): Promise<VolunteerSettings>;
+  /** Throws ApiError 422 with `details.issues` when the text doesn't pass validation. */
+  save(keyId: number, locale: string, text: string, approve: boolean): Promise<SaveResult>;
+  approve(keyId: number, locale: string): Promise<ApproveResult>;
+  /** 2C: a Review card's third choice. Only call when settings().actions.flag. */
+  flag(keyId: number, locale: string, reason: FlagReason, note?: string): Promise<FlagResponse>;
+  /** 2B: report a project (and optionally the string). Only call when settings().actions.report. */
+  report(projectId: number, keyId: number, reason: ReportReason, note?: string): Promise<ReportResponse>;
+}
+
+export const isMock = import.meta.env.DEV && new URLSearchParams(window.location.search).get('mock') === '1';
+
+const real: VolunteerClient = {
+  session: (size = 5, nonprofitsOnly) => api<SessionResponse>(`/api/v1/volunteer/session?size=${size}${nonprofitsOnly === undefined ? '' : `&nonprofitsOnly=${nonprofitsOnly ? 1 : 0}`}`),
+  stats: () => api<StatsResponse>('/api/v1/volunteer/stats'),
+  settings: () => api<VolunteerSettings>('/api/v1/volunteer/settings'),
+  setNonprofitsOnly: (on) => api<VolunteerSettings>('/api/v1/volunteer/settings', { method: 'PUT', body: { nonprofitsOnly: on } }),
+  save: (keyId, locale, text, approve) => api<SaveResult>(`/api/v1/translations/${keyId}/${locale}`, { method: 'PUT', body: { text, approve } }),
+  approve: (keyId, locale) => api<ApproveResult>(`/api/v1/translations/${keyId}/${locale}/approve`, { method: 'POST' }),
+  flag: (keyId, locale, reason, note) => api<FlagResponse>(`/api/v1/translations/${keyId}/${locale}/flag`, { method: 'POST', body: { reason, note } }),
+  report: (projectId, keyId, reason, note) => api<ReportResponse>('/api/v1/reports', { method: 'POST', body: { projectId, keyId, reason, note } }),
+};
+
+let client: Promise<VolunteerClient> | null = null;
+export function volunteerClient(): Promise<VolunteerClient> {
+  client ??= isMock ? import('./mock').then((m) => m.mockClient) : Promise.resolve(real);
+  return client;
+}

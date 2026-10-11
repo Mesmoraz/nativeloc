@@ -144,7 +144,7 @@ Then they choose languages and submit for moderation.
 Memberships, org columns, `is_staff`, project columns, the new `ready` status, and the migration. Rewrite
 `projectAccess` and the org-scoped queries to use memberships. **No behavior change:** existing tests and the
 demo pass unchanged, plus migration tests. It also writes the contract for the pieces below (endpoint shapes
-and shared types in `apps/web/src/types.ts` or a new `contracts/` file) and a file-ownership table.
+and shared types in `apps/web/src/types.ts` or a new `contracts/` file) and a file-ownership table. Done: see [segment-2-contracts.md](segment-2-contracts.md).
 
 ### Parallel pieces (after 2.0 merges)
 

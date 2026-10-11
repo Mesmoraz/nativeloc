@@ -1,0 +1,149 @@
+/* Volunteer cards (/v). Phone first (360–430px), one thumb: the main action sits at the bottom. */
+
+.v-app {
+  --v-gutter: 16px;
+  display: flex; flex-direction: column;
+  min-height: 100vh; min-height: 100dvh;
+  max-width: 520px; margin: 0 auto;
+}
+
+/* ---------- header ---------- */
+.v-top {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px var(--v-gutter); padding-top: max(10px, env(safe-area-inset-top));
+  position: sticky; top: 0; z-index: 10;
+  background: var(--bg);
+}
+.v-top .brand { width: 36px; flex: none; }
+.v-title { flex: 1; text-align: center; font-weight: 600; color: var(--muted); font-size: 0.9rem; }
+.v-close { width: 36px; height: 36px; padding: 0; justify-content: center; border: none; background: transparent; color: var(--muted); font-size: 1.1rem; border-radius: 50%; flex: none; }
+
+.v-dots { flex: 1; display: flex; justify-content: center; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.v-dots li { width: 10px; height: 10px; border-radius: 50%; background: var(--border); transition: background 0.2s, transform 0.2s; }
+.v-dots li.current { background: transparent; box-shadow: inset 0 0 0 2px var(--accent); transform: scale(1.2); }
+.v-dots li.accepted { background: var(--accent); }
+.v-dots li.pending { background: var(--accent); opacity: 0.4; }
+.v-dots li.skipped { background: var(--border); opacity: 0.6; }
+
+/* ---------- body & bottom actions ---------- */
+.v-card { flex: 1; display: flex; flex-direction: column; position: relative; animation: v-in 0.24s ease-out; }
+.v-body { flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 8px var(--v-gutter) 20px; }
+.v-actions {
+  position: sticky; bottom: 0; z-index: 5;
+  display: flex; gap: 10px; align-items: stretch;
+  padding: 12px var(--v-gutter); padding-bottom: max(12px, env(safe-area-inset-bottom));
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
+.v-btn { min-height: 52px; padding: 0 18px; justify-content: center; border-radius: 14px; font-size: 1rem; font-weight: 600; }
+.v-btn.ghost { color: var(--muted); }
+.v-main { flex: 1; font-size: 1.1rem; }
+
+/* ---------- card content ---------- */
+.v-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.v-kind { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); flex: none; }
+.v-kind.review { background: var(--chip); color: var(--chip-ink); }
+.v-where { color: var(--muted); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Who the card helps, and the Flag / Report actions (Segment 2E). */
+.v-org { display: flex; flex-direction: column; gap: 2px; margin-top: -6px; }
+.v-org-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 8px; font-weight: 600; font-size: 0.95rem; }
+.v-org-kind { font-size: 0.75rem; font-weight: 600; padding: 1px 8px; border-radius: 99px; background: var(--chip); color: var(--chip-ink); }
+.v-org-kind.verified { background: var(--accent-soft); color: var(--accent); }
+.v-org-about { margin: 0; }
+.v-flag, .v-report { align-self: flex-start; background: none; border: none; box-shadow: none; padding: 4px 0; min-height: 0; color: var(--muted); text-decoration: underline; cursor: pointer; }
+.v-report { align-self: center; }
+.v-reasons { display: flex; flex-direction: column; gap: 8px; }
+.v-reason-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.v-reason-row .chip { min-height: 40px; padding: 0 14px; }
+.v-reason-row .chip.ghost { background: transparent; color: var(--muted); }
+
+/* "Nonprofits only" on the start screen. */
+.v-filter { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; }
+.v-filter input { width: 20px; height: 20px; flex: none; margin: 0; }
+
+.v-source, .v-translation, .v-editor {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px; box-shadow: var(--shadow);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.v-source-text, .v-target-text { font-size: 1.25rem; line-height: 1.45; margin: 0; white-space: pre-wrap; word-break: break-word; }
+.v-target-text { font-size: 1.3rem; }
+.v-form + .v-form { margin-top: 6px; }
+
+.v-context { display: flex; flex-direction: column; gap: 10px; }
+.v-context .context-note { font-size: 0.92rem; }
+.v-shot { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 8px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); white-space: normal; box-shadow: var(--shadow); }
+.v-shot-hint { color: var(--muted); text-align: center; }
+/* A 140px strip of the screen, scrolled so the highlight sits in the middle (clamped to the image's edges). */
+.v-shot-strip { --strip: 140px; display: block; width: 100%; max-width: 400px; margin: 0 auto; height: var(--strip); overflow: hidden; border-radius: 8px; background: #000; }
+.v-shot-strip .v-shot-pic { display: block; width: 100%; transform: translateY(clamp(calc(-100% + var(--strip)), calc(var(--cy) * -100% + var(--strip) / 2), 0px)); }
+.v-shot-strip img { width: 100%; height: auto; }
+.v-shot-pic { position: relative; display: inline-block; }
+.v-shot-pic img { display: block; }
+.v-shot-box { position: absolute; border: 3px solid #facc15; border-radius: 6px; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4); }
+
+.v-zoom { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, 0.85); display: grid; place-items: center; padding: 16px; animation: v-fade 0.15s ease-out; }
+.v-zoom .v-shot-pic { border-radius: 10px; overflow: hidden; }
+.v-zoom img { width: auto; height: auto; max-height: calc(100dvh - 32px); max-width: calc(100vw - 32px); }
+.v-zoom-close { position: absolute; top: max(12px, env(safe-area-inset-top)); right: 12px; width: 44px; height: 44px; justify-content: center; border-radius: 50%; background: rgba(255, 255, 255, 0.15); color: #fff; border: none; font-size: 1.2rem; }
+
+.v-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 2px 0 4px; }
+.v-chips button.chip { min-height: 36px; padding: 4px 12px; font-size: 0.92rem; }
+.v-editor textarea { width: 100%; font-size: 1.15rem; padding: 10px 12px; min-height: 64px; resize: vertical; border-width: 2px; }
+.v-editor .plural-intro { margin: 0 0 4px; font-size: 0.88rem; }
+.v-issues { gap: 6px; margin-top: 4px; }
+
+/* ---------- XP pop ---------- */
+.v-pop-layer { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; pointer-events: none; background: color-mix(in srgb, var(--bg) 55%, transparent); animation: v-fade 0.15s ease-out; }
+.v-pop {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: var(--accent); color: var(--accent-ink);
+  padding: 14px 26px; border-radius: 20px; box-shadow: var(--shadow);
+  animation: v-pop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.v-pop.pending { background: var(--surface); color: var(--accent); border: 2px dashed var(--accent); }
+.v-pop-points { font-size: 1.6rem; font-weight: 800; }
+.v-pop.pending .v-pop-points { opacity: 0.6; }
+.v-pop-note { font-size: 0.85rem; font-weight: 600; }
+
+/* ---------- home & summary ---------- */
+.v-home { justify-content: center; gap: 20px; }
+.v-home h1, .v-summary h1 { font-size: 1.7rem; margin: 0; }
+.v-lead { font-size: 1.05rem; margin: 6px 0 0; }
+.v-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.v-stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; gap: 2px; box-shadow: var(--shadow); }
+.v-stat-num { font-size: 1.8rem; font-weight: 800; line-height: 1.2; }
+.v-explain { margin: 0; }
+
+.v-xp { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 800; }
+.v-xp.big { font-size: 1.8rem; line-height: 1.2; }
+.v-xp-accepted { color: var(--accent); }
+.v-xp-pending { color: var(--accent); opacity: 0.45; font-size: 0.75em; }
+.v-xp-unit { font-size: 0.5em; color: var(--muted); font-weight: 700; }
+
+.v-summary { justify-content: center; gap: 18px; }
+.v-summary-hero { text-align: center; }
+.v-summary-hero p { margin: 4px 0 0; }
+.v-summary-check { width: 64px; height: 64px; margin: 0 auto 12px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-size: 2rem; font-weight: 800; animation: v-pop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1); }
+.v-helped ul { margin: 6px 0 0; padding-left: 20px; }
+
+/* ---------- motion ---------- */
+@keyframes v-in { from { opacity: 0; transform: translateX(24px); } }
+@keyframes v-fade { from { opacity: 0; } }
+@keyframes v-pop { from { opacity: 0; transform: scale(0.7) translateY(8px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .v-card, .v-pop, .v-pop-layer, .v-zoom, .v-summary-check { animation: none; }
+  .v-dots li { transition: none; }
+}
+
+/* Desktop: keep the phone column, give it a frame. */
+@media (min-width: 640px) {
+  .v-app { border-left: 1px solid var(--border); border-right: 1px solid var(--border); background: var(--bg); }
+  .v-actions { border-top-color: var(--border); }
+}
+
+/* Home page entry point */
+.card.v-entry { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; border-color: var(--accent); background: var(--accent-soft); }
+.v-entry .btn { padding: 10px 18px; }

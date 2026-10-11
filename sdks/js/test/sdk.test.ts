@@ -6,7 +6,7 @@ const manifest = {
   sourceLocale: 'en',
   locales: {
     en: { sha256: 'aaa', url: '/b/tok/en.json', completeness: 1 },
-    ru: { sha256: 'bbb', url: '/b/tok/ru.json', completeness: 0.5 },
+    ru: { sha256: 'bbb', url: '/b/tok/ru.json', completeness: 0.5, quality: 'community', reviewers: 4 },
   },
 };
 const bundles: Record<string, Record<string, string>> = {
@@ -60,5 +60,22 @@ describe('NativeLoc JS SDK', () => {
 
     const fresh = await new NativeLoc({ baseUrl: 'http://x', bundleToken: 'tok', locale: 'ru', fetch: s.fetchImpl, fallback: { en: { hello: 'Hi {name}' } } }).init();
     expect(fresh.t('hello', { name: 'A' })).toBe('Hi A');
+  });
+
+  it('exposes the quality label from the manifest, and keeps it offline', async () => {
+    const storage = memoryStorage();
+    const s = fakeServer();
+    const loc = await new NativeLoc({ baseUrl: 'http://x', bundleToken: 'tok', locale: 'ru', fetch: s.fetchImpl, storage }).init();
+    expect(loc.quality()).toEqual({ quality: 'community', reviewers: 4, label: 'Community-reviewed, not verified' });
+    expect(loc.quality('en')).toBeNull();
+    s.setOnline(false);
+    const offline = await new NativeLoc({ baseUrl: 'http://x', bundleToken: 'tok', locale: 'ru', fetch: s.fetchImpl, storage }).init();
+    expect(offline.quality()?.quality).toBe('community');
+  });
+
+  it('labels verified text with the reviewer count', async () => {
+    const { qualityLabel } = await import('../src/index.js');
+    expect(qualityLabel('verified', 1)).toBe('Checked by 1 native speaker');
+    expect(qualityLabel('verified', 3)).toBe('Checked by 3 native speakers');
   });
 });

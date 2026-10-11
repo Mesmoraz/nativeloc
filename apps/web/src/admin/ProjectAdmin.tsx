@@ -4,9 +4,13 @@ import { TopBar } from '../App';
 import { api, type JoinLink, type Project, type Tier, type User } from '../api';
 import { ChipText, ProgressBar, StatusBadge } from '../components';
 import { languageName, nativeLanguageName } from '../types';
+import { ReadyToPublish } from '../community/ReadyToPublish';
+import type { ManifestQuality } from '../contracts';
+import { postingTabs } from '../posting/projectTabs';
 import { Screenshots } from './Screenshots';
 
-type Tab = 'overview' | 'strings' | 'import' | 'screens' | 'team' | 'questions' | 'devices';
+// Built-in tabs, plus any a Segment 2 piece adds (postingTabs, by id).
+type Tab = string;
 const TABS: [Tab, string][] = [
   ['overview', 'Overview'],
   ['strings', 'Strings'],
@@ -15,12 +19,28 @@ const TABS: [Tab, string][] = [
   ['team', 'Team'],
   ['questions', 'Questions'],
   ['devices', 'Devices & API'],
+  ...postingTabs.map((t): [Tab, string] => [t.id, t.label]),
 ];
+
+/** Community-reviewed projects get the poster's "Ready to publish" tab (Segment 2C), right after Overview. */
+function tabsFor(project: Project): [Tab, string][] {
+  if (project.reviewMode !== 'community') return TABS;
+  const ready = project.progress.reduce((n, p) => n + (p.ready ?? 0), 0);
+  return [TABS[0], ['ready', ready ? `Ready to publish (${ready})` : 'Ready to publish'], ...TABS.slice(1)];
+}
 
 export interface Manifest {
   version: number;
   publishedAt: string;
-  locales: Record<string, { sha256: string; url: string; completeness: number }>;
+  /** quality/reviewers: Segment 2C (missing on releases from older servers). */
+  locales: Record<string, { sha256: string; url: string; completeness: number } & Partial<ManifestQuality>>;
+}
+
+/** How devices label a locale's text: "Checked by N native speakers" or "Community-reviewed, not verified". */
+export function qualityLabel(q: Partial<ManifestQuality> | undefined): string | null {
+  if (!q?.quality) return null;
+  if (q.quality === 'community') return 'Community-reviewed, not verified';
+  return `Checked by ${q.reviewers ?? 0} native speaker${q.reviewers === 1 ? '' : 's'}`;
 }
 
 export function ProjectAdmin() {
@@ -62,7 +82,7 @@ export function ProjectAdmin() {
             </div>
             <h1>{project.name}</h1>
             <nav className="tabs">
-              {TABS.map(([id, label]) => (
+              {tabsFor(project).map(([id, label]) => (
                 <button key={id} className={tab === id ? 'active' : ''} onClick={() => pick(id)}>
                   {label}
                 </button>
@@ -75,6 +95,10 @@ export function ProjectAdmin() {
             {tab === 'team' && <Team project={project} />}
             {tab === 'questions' && <Questions projectId={project.id} />}
             {tab === 'devices' && <Devices project={project} manifest={manifest} reload={load} />}
+            {tab === 'ready' && project.reviewMode === 'community' && <ReadyToPublish project={project} reload={load} />}
+            {postingTabs.filter((t) => t.id === tab).map((t) => (
+              <div key={t.id}>{t.render({ project, reload: load })}</div>
+            ))}
           </>
         )}
       </main>
@@ -91,7 +115,11 @@ function Overview({ project, manifest, reload }: { project: Project; manifest: M
     setBusy(true);
     try {
       const r = await api<{ manifest: Manifest }>(`/api/v1/projects/${project.id}/publish`, { method: 'POST' });
-      setMsg(`Published version ${r.manifest.version}. Devices will pick it up on their next check.`);
+      const labels = Object.entries(r.manifest.locales)
+        .filter(([l]) => l !== project.sourceLocale)
+        .map(([l, q]) => (qualityLabel(q) ? `${languageName(l)}: ${qualityLabel(q)}` : null))
+        .filter(Boolean);
+      setMsg(`Published version ${r.manifest.version}. Devices will pick it up on their next check.${labels.length ? ` ${labels.join(' · ')}.` : ''}`);
       await reload();
     } catch (e) {
       setMsg((e as Error).message);
@@ -121,6 +149,7 @@ function Overview({ project, manifest, reload }: { project: Project; manifest: M
               <th>Language</th>
               <th style={{ width: '40%' }}>Progress</th>
               <th>Done</th>
+              {project.reviewMode === 'community' && <th>Ready</th>}
               <th>In review</th>
               <th>To do</th>
               <th />
@@ -136,6 +165,7 @@ function Overview({ project, manifest, reload }: { project: Project; manifest: M
                   <ProgressBar p={p} />
                 </td>
                 <td>{p.approved}</td>
+                {project.reviewMode === 'community' && <td>{p.ready ?? 0}</td>}
                 <td>{p.review}</td>
                 <td>{p.todo + p.outdated}</td>
                 <td className="row" style={{ gap: 6 }}>
@@ -167,6 +197,11 @@ function Overview({ project, manifest, reload }: { project: Project; manifest: M
           <input type="checkbox" checked={project.requireReview} onChange={(e) => void saveSettings({ requireReview: e.target.checked })} />
           Translations by localizers need a reviewer's approval before they ship
         </label>
+        {project.reviewMode === 'community' ? (
+          <p className="small muted" style={{ margin: 0 }}>
+            Community review: volunteers agree on each translation (3 approvals, or 5 after a flag or an edit), then it waits for you under Ready to publish.
+          </p>
+        ) : (
         <label className="row small">
           Peer review:
           <select value={project.peerApprovals} onChange={(e) => void saveSettings({ peerApprovals: Number(e.target.value) })} disabled={!project.requireReview}>
@@ -177,6 +212,7 @@ function Overview({ project, manifest, reload }: { project: Project; manifest: M
           </select>
           <span className="muted">Localizers check each other's work; reviewers can still approve directly.</span>
         </label>
+        )}
       </div>
 
       <WebsitePreview project={project} saveSettings={saveSettings} reload={reload} />
@@ -187,6 +223,17 @@ function Overview({ project, manifest, reload }: { project: Project; manifest: M
           Publishing snapshots every approved translation. Untranslated text falls back to {languageName(project.sourceLocale)}.
           {manifest ? ` Live now: version ${manifest.version}, published ${new Date(manifest.publishedAt).toLocaleString()}.` : ' Nothing published yet.'}
         </p>
+        {manifest && (
+          <div className="row quality">
+            {Object.entries(manifest.locales)
+              .filter(([l]) => l !== project.sourceLocale && qualityLabel(manifest.locales[l]))
+              .map(([l, q]) => (
+                <span key={l}>
+                  {languageName(l)}: {qualityLabel(q)}
+                </span>
+              ))}
+          </div>
+        )}
         <div className="row">
           <button className="primary" onClick={() => void publish()} disabled={busy}>
             Publish version {project.version + 1}
@@ -447,7 +494,7 @@ function Team({ project }: { project: Project }) {
                   <div className="small muted">{u.email}</div>
                 </td>
                 <td>
-                  <select value={u.role} onChange={(e) => void update(u, { role: e.target.value as User['role'] })}>
+                  <select value={u.role ?? ''} onChange={(e) => void update(u, { role: e.target.value as User['role'] })}>
                     <option value="localizer">Localizer</option>
                     <option value="reviewer">Reviewer</option>
                     <option value="admin">Admin</option>

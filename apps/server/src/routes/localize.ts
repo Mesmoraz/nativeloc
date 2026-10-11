@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { HttpError, projectAccess, requireUser } from '../auth.js';
-import { all, get, run, type DB, type KeyRow } from '../db.js';
-import { approveTranslation, queue, saveTranslation } from '../services.js';
+import { all, get, run, tx, type DB, type KeyRow } from '../db.js';
+import { approveTranslation, flagTranslation, queue, saveTranslation } from '../services.js';
 import { checkLocale, intParam } from '../util.js';
+import { voidPending } from '../xp.js';
 
 function keyProject(db: DB, keyId: number) {
   const key = get<KeyRow>(db, 'SELECT * FROM keys WHERE id = ?', keyId);
@@ -16,9 +17,9 @@ export function localizeRoutes(app: FastifyInstance, db: DB) {
     async (req) => {
       const locale = checkLocale(req.query.locale);
       const mode = req.query.mode === 'review' ? 'review' : 'translate';
-      const { project, actor } = projectAccess(db, req, intParam(req.params.id), mode, locale);
+      const { project, member } = projectAccess(db, req, intParam(req.params.id), mode, locale);
       return queue(db, project, locale, mode, {
-        viewer: actor.kind === 'user' ? actor.user : undefined,
+        viewer: member ?? undefined,
         limit: Number(req.query.limit) || undefined,
         exclude: (req.query.exclude ?? '').split(',').filter(Boolean).map(Number),
         keyId: req.query.keyId ? intParam(req.query.keyId) : undefined,
@@ -29,19 +30,31 @@ export function localizeRoutes(app: FastifyInstance, db: DB) {
   app.put<{ Params: { keyId: string; locale: string }; Body: { text?: string; approve?: boolean } }>('/api/v1/translations/:keyId/:locale', async (req) => {
     const locale = checkLocale(req.params.locale);
     const key = keyProject(db, intParam(req.params.keyId));
-    const { project, actor } = projectAccess(db, req, key.project_id, req.body?.approve ? 'review' : 'translate', locale);
-    if (actor.kind !== 'user') throw new HttpError(403, 'Sign in to translate.');
+    const { project, member } = projectAccess(db, req, key.project_id, req.body?.approve ? 'review' : 'translate', locale);
+    if (!member) throw new HttpError(403, 'Sign in to translate.');
     if (typeof req.body?.text !== 'string') throw new HttpError(400, 'Missing text.');
-    return saveTranslation(db, project, actor.user, key.id, locale, req.body.text, !!req.body.approve);
+    return saveTranslation(db, project, member, key.id, locale, req.body.text, !!req.body.approve);
   });
 
   /** Approve as-is: reviewers approve outright; with peer review on, a localizer's approval is one vote. */
   app.post<{ Params: { keyId: string; locale: string } }>('/api/v1/translations/:keyId/:locale/approve', async (req) => {
     const locale = checkLocale(req.params.locale);
     const key = keyProject(db, intParam(req.params.keyId));
-    const { project, actor } = projectAccess(db, req, key.project_id, 'review', locale);
-    if (actor.kind !== 'user') throw new HttpError(403, 'Sign in to review.');
-    return approveTranslation(db, project, actor.user, key.id, locale);
+    const { project, member } = projectAccess(db, req, key.project_id, 'review', locale);
+    if (!member) throw new HttpError(403, 'Sign in to review.');
+    return approveTranslation(db, project, member, key.id, locale);
+  });
+
+  /**
+   * Community review's third choice (after Approve and Improve): flag the wording with a reason. Anyone who may
+   * translate the string can flag; flags from new volunteers are kept but don't count (NEW_VOLUNTEER_FLAGS_COUNT).
+   */
+  app.post<{ Params: { keyId: string; locale: string }; Body: { reason?: string; note?: string } }>('/api/v1/translations/:keyId/:locale/flag', async (req) => {
+    const locale = checkLocale(req.params.locale);
+    const key = keyProject(db, intParam(req.params.keyId));
+    const { project, member } = projectAccess(db, req, key.project_id, 'translate', locale);
+    if (!member) throw new HttpError(403, 'Sign in to review.');
+    return flagTranslation(db, project, member, key.id, locale, String(req.body?.reason ?? ''), typeof req.body?.note === 'string' ? req.body.note : undefined);
   });
 
   /**
@@ -51,10 +64,14 @@ export function localizeRoutes(app: FastifyInstance, db: DB) {
   app.post<{ Params: { keyId: string; locale: string } }>('/api/v1/translations/:keyId/:locale/reject', async (req) => {
     const locale = checkLocale(req.params.locale);
     const key = keyProject(db, intParam(req.params.keyId));
-    const { actor } = projectAccess(db, req, key.project_id, 'review', locale);
-    if (actor.kind !== 'user' || actor.user.role === 'localizer') throw new HttpError(403, 'Only reviewers can send translations back. Improve the text instead.');
-    run(db, "UPDATE translations SET status = 'outdated' WHERE key_id = ? AND locale = ?", key.id, locale);
-    run(db, 'DELETE FROM votes WHERE key_id = ? AND locale = ?', key.id, locale);
+    const { member } = projectAccess(db, req, key.project_id, 'review', locale);
+    if (!member || member.role === 'localizer') throw new HttpError(403, 'Only reviewers can send translations back. Improve the text instead.');
+    tx(db, () => {
+      run(db, "UPDATE translations SET status = 'outdated' WHERE key_id = ? AND locale = ?", key.id, locale);
+      run(db, 'DELETE FROM votes WHERE key_id = ? AND locale = ?', key.id, locale);
+      // Pending XP on the string goes with it; anything already accepted stays.
+      voidPending(db, { projectId: key.project_id, keyId: key.id, locale });
+    });
     return { status: 'outdated' };
   });
 
@@ -85,7 +102,8 @@ export function localizeRoutes(app: FastifyInstance, db: DB) {
   });
 
   app.post<{ Params: { qid: string }; Body: { answer?: string; description?: boolean } }>('/api/v1/questions/:qid/answer', async (req) => {
-    requireUser(db, req, ['admin']);
+    // Only admins answer (of the question's project; projectAccess checks that below).
+    if (!requireUser(db, req).memberships.some((m) => m.role === 'admin')) throw new HttpError(403, 'You do not have permission to do that.');
     const q = get<{ id: number; key_id: number }>(db, 'SELECT id, key_id FROM questions WHERE id = ?', intParam(req.params.qid));
     if (!q) throw new HttpError(404, 'Question not found.');
     const key = keyProject(db, q.key_id);

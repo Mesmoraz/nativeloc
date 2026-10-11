@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useSession } from '../App';
 import { api } from '../api';
 
@@ -57,6 +58,9 @@ export function Login() {
         <button className="primary" disabled={busy}>
           Sign in
         </button>
+        <p className="small muted" style={{ margin: 0 }}>
+          New here? <Link to="/signup">Create an account</Link> to volunteer or get your organization's information translated.
+        </p>
         {import.meta.env.DEV && (
           <div className="stack demo-accounts">
             <p className="muted" style={{ margin: 0 }}>

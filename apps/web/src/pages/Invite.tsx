@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useSession } from '../App';
 import { api } from '../api';
 import { languageName } from '../types';
@@ -13,7 +13,7 @@ interface InviteInfo {
 
 export function Invite() {
   const { token = '' } = useParams();
-  const { refresh } = useSession();
+  const { session, refresh } = useSession();
   const navigate = useNavigate();
   const [info, setInfo] = useState<InviteInfo | null>(null);
   const [error, setError] = useState('');
@@ -27,7 +27,8 @@ export function Invite() {
     e.preventDefault();
     setError('');
     try {
-      await api(`/api/v1/invites/${token}/accept`, { body: form });
+      // Signed in: the invite joins this account to the org; no form needed.
+      await api(`/api/v1/invites/${token}/accept`, { body: session ? {} : form });
       await refresh();
       navigate('/');
     } catch (err) {
@@ -45,7 +46,12 @@ export function Invite() {
             {info.locales.length ? <> for {info.locales.map(languageName).join(', ')}</> : null}.
           </p>
         )}
-        {info && (
+        {info && session && (
+          <p className="small muted" style={{ margin: 0 }}>
+            You're signed in as <b>{session.user.name}</b> ({session.user.email}). Accepting adds {info.org} to your account.
+          </p>
+        )}
+        {info && !session && (
           <>
             <label className="field">
               Your name
@@ -64,7 +70,12 @@ export function Invite() {
           </>
         )}
         {error && <div className="alert error">{error}</div>}
-        {info && <button className="primary">Create account</button>}
+        {info && <button className="primary">{session ? `Join ${info.org}` : 'Create account'}</button>}
+        {info && !session && (
+          <p className="small muted" style={{ margin: 0 }}>
+            Already have an account? <Link to="/">Sign in</Link>, then open this link again.
+          </p>
+        )}
       </form>
     </div>
   );

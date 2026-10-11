@@ -43,5 +43,19 @@ export interface BundleManifest {
   version: number;
   sourceLocale: string;
   publishedAt: string;
-  locales: Record<string, { sha256: string; url: string; completeness: number }>;
+  locales: Record<string, BundleLocale>;
+}
+
+/** One locale in the manifest. */
+export interface BundleLocale {
+  sha256: string;
+  url: string;
+  completeness: number;
+  /**
+   * How the text was reviewed: 'verified' (standard review) is shown as "Checked by N native speakers",
+   * 'community' as "Community-reviewed, not verified".
+   */
+  quality: 'verified' | 'community';
+  /** Distinct people who reviewed the shipped text (0 for the source language). */
+  reviewers: number;
 }

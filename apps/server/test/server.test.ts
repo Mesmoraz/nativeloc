@@ -21,6 +21,12 @@ async function login(email: string) {
   cookies[email] = `nl_sid=${c.value}`;
 }
 const as = (email: string) => ({ cookie: cookies[email] });
+/** Join-link accounts confirm their email before they translate (2A): open the link from the outbox. */
+async function confirmEmail(email: string) {
+  const body = (db.prepare("SELECT body FROM outbox WHERE to_email = ? AND kind = 'verify' ORDER BY id DESC LIMIT 1").get(email) as { body: string }).body;
+  const token = /token=([\w-]+)/.exec(body)![1];
+  expect((await app.inject({ method: 'POST', url: '/api/v1/auth/verify-email', payload: { token } })).statusCode).toBe(200);
+}
 const bearer = { authorization: `Bearer ${TOKEN}` };
 
 function multipart(fields: Record<string, string>, file: { name: string; type: string; data: Buffer }) {
@@ -180,7 +186,10 @@ describe('volunteers and peer review', () => {
   async function join(email: string, extra: Record<string, unknown> = {}) {
     const res = await app.inject({ method: 'POST', url: `/api/v1/join/${code}`, payload: { name: email.split('@')[0], email, password: 'pw-12345678', locales: ['es'], ...extra } });
     const c = res.cookies.find((x) => x.name === 'nl_sid');
-    if (c) cookies[email] = `nl_sid=${c.value}`;
+    if (c) {
+      cookies[email] = `nl_sid=${c.value}`;
+      await confirmEmail(email);
+    }
     return res;
   }
   const approve = (email: string) => app.inject({ method: 'POST', url: `/api/v1/translations/${keyId}/es/approve`, headers: as(email) });
@@ -224,7 +233,7 @@ describe('volunteers and peer review', () => {
     expect((await approve('ana@t.test')).statusCode).toBe(403);
 
     expect(await reviewQueue('ben@t.test')).toContain(keyId);
-    expect((await approve('ben@t.test')).json()).toEqual({ status: 'review', approvals: { count: 1, needed: 2 } });
+    expect((await approve('ben@t.test')).json()).toMatchObject({ status: 'review', approvals: { count: 1, needed: 2 } });
     expect(await reviewQueue('ben@t.test')).not.toContain(keyId); // already approved by Ben
 
     // Peers can't discard work; they improve it, which restarts the approvals under the new author.
@@ -237,7 +246,7 @@ describe('volunteers and peer review', () => {
     expect(projects[0].progress[0].reviewable).toBeGreaterThan(0);
 
     expect((await approve('ana@t.test')).json().approvals).toEqual({ count: 1, needed: 2 });
-    expect((await approve('ben@t.test')).json()).toEqual({ status: 'approved', approvals: { count: 2, needed: 2 } });
+    expect((await approve('ben@t.test')).json()).toMatchObject({ status: 'approved', approvals: { count: 2, needed: 2 } });
   });
 
   it('adds languages to an existing account from a new link', async () => {
@@ -258,6 +267,7 @@ describe('placement check', () => {
   async function join(email: string) {
     const res = await app.inject({ method: 'POST', url: `/api/v1/join/${code}`, payload: { name: email.split('@')[0], email, password: 'pw-12345678', locales: ['es'] } });
     cookies[email] = `nl_sid=${res.cookies.find((x) => x.name === 'nl_sid')!.value}`;
+    await confirmEmail(email);
     return res.json().user;
   }
   const start = (email: string) => app.inject({ method: 'POST', url: '/api/v1/placement/es/start', headers: as(email) });
@@ -346,6 +356,6 @@ describe('placement check', () => {
     const keyId = db.prepare("SELECT id FROM keys WHERE name = 'bye'").get()!.id;
     await app.inject({ method: 'PUT', url: `/api/v1/translations/${keyId}/es`, headers: as('dee@t.test'), payload: { text: 'Adiós' } });
     const res = await app.inject({ method: 'POST', url: `/api/v1/translations/${keyId}/es/approve`, headers: as('eli@t.test') });
-    expect(res.json()).toEqual({ status: 'approved' });
+    expect(res.json()).toMatchObject({ status: 'approved' });
   });
 });

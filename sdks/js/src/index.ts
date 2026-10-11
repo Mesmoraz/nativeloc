@@ -20,10 +20,27 @@ export interface NativeLocOptions {
   fetch?: typeof fetch;
 }
 
+/**
+ * How a locale's text was reviewed, from the manifest. 'verified': standard review, shown as "Checked by N native
+ * speakers". 'community': community review, shown as "Community-reviewed, not verified".
+ */
+export interface Quality {
+  quality: 'verified' | 'community';
+  reviewers: number;
+  /** A ready-made English label for the two cases above. */
+  label: string;
+}
+
 interface Manifest {
   version: number;
   sourceLocale: string;
-  locales: Record<string, { sha256: string; url: string; completeness: number }>;
+  /** quality and reviewers are missing from servers before Segment 2C. */
+  locales: Record<string, { sha256: string; url: string; completeness: number; quality?: Quality['quality']; reviewers?: number }>;
+}
+
+export function qualityLabel(quality: Quality['quality'], reviewers: number): string {
+  if (quality === 'community') return 'Community-reviewed, not verified';
+  return `Checked by ${reviewers} native speaker${reviewers === 1 ? '' : 's'}`;
 }
 
 interface CacheEntry {
@@ -64,6 +81,7 @@ export class NativeLoc {
   private opts: Required<Omit<NativeLocOptions, 'fallback'>> & { fallback: Record<string, Bundle> };
   private bundles: Record<string, Bundle> = {};
   private sourceLocale: string | null = null;
+  private qualities: Record<string, { quality: Quality['quality']; reviewers: number }> = {};
   private manifestEtag: string | undefined;
   private formatters = new Map<string, IntlMessageFormat>();
   private listeners = new Set<() => void>();
@@ -90,8 +108,9 @@ export class NativeLoc {
   async init(): Promise<this> {
     const meta = await this.opts.storage.get('meta');
     if (meta) {
-      const m = JSON.parse(meta) as { sourceLocale: string; version: number; etag?: string };
+      const m = JSON.parse(meta) as { sourceLocale: string; version: number; etag?: string; quality?: NativeLoc['qualities'] };
       this.sourceLocale = m.sourceLocale;
+      this.qualities = m.quality ?? {};
       this.version = m.version;
       this.manifestEtag = m.etag;
     }
@@ -120,6 +139,11 @@ export class NativeLoc {
       return this.refresh();
     }
     this.sourceLocale = manifest.sourceLocale;
+    this.qualities = Object.fromEntries(
+      Object.entries(manifest.locales)
+        .filter(([, info]) => info.quality)
+        .map(([l, info]) => [l, { quality: info.quality!, reviewers: info.reviewers ?? 0 }]),
+    );
     let changed = false;
     for (const l of this.wanted()) {
       const info = manifest.locales[l];
@@ -136,7 +160,7 @@ export class NativeLoc {
     }
     this.manifestEtag = res.headers.get('etag') ?? undefined;
     this.version = manifest.version;
-    await this.opts.storage.set('meta', JSON.stringify({ sourceLocale: manifest.sourceLocale, version: manifest.version, etag: this.manifestEtag }));
+    await this.opts.storage.set('meta', JSON.stringify({ sourceLocale: manifest.sourceLocale, version: manifest.version, etag: this.manifestEtag, quality: this.qualities }));
     if (changed) {
       this.formatters.clear();
       this.listeners.forEach((fn) => fn());
@@ -180,6 +204,15 @@ export class NativeLoc {
       if (m !== undefined) return { message: m, locale };
     }
     return null;
+  }
+
+  /**
+   * How the downloaded text for `locale` (default: the current locale) was reviewed, for showing next to it.
+   * null for the source language, before the first download, or from an older server.
+   */
+  quality(locale = this.opts.locale): Quality | null {
+    const q = locale === this.sourceLocale ? undefined : this.qualities[locale];
+    return q ? { ...q, label: qualityLabel(q.quality, q.reviewers) } : null;
   }
 
   has(key: string) {

@@ -8,7 +8,10 @@ interface JoinInfo {
   org: string;
   locales: string[];
   projects: string[];
+  /** Whoever is signed in (they join with that account). */
   me: User | null;
+  /** The signed-in user already belongs to this org. */
+  member?: boolean;
 }
 
 /** Public volunteer sign-up from a shared link: pick your language, make an account, start translating. */
@@ -82,7 +85,8 @@ export function Join() {
 
             {info.me ? (
               <p className="small muted" style={{ margin: 0 }}>
-                You're signed in as <b>{info.me.name}</b>. We'll add the languages you pick to your account.
+                You're signed in as <b>{info.me.name}</b>.{' '}
+                {info.member ? "We'll add the languages you pick to your account." : `You'll join ${info.org} as a volunteer with this account.`}
               </p>
             ) : (
               <>
@@ -105,7 +109,7 @@ export function Join() {
         {error && <div className="alert error">{error}</div>}
         {info && (
           <button className="primary" disabled={busy}>
-            {info.me ? 'Add language & start' : 'Join & start translating'}
+            {info.me ? (info.member ? 'Add language & start' : `Join ${info.org}`) : 'Join & start translating'}
           </button>
         )}
       </form>

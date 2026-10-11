@@ -2,11 +2,20 @@ import { createReadStream, existsSync, unlinkSync, writeFileSync } from 'node:fs
 import { basename, join } from 'node:path';
 import { ADAPTERS, detectFormat, displayKey, type SourceEntry } from '@nativeloc/core';
 import type { FastifyInstance } from 'fastify';
-import { actorOf, HttpError, projectAccess, randomToken, requireUser, sha256 } from '../auth.js';
+import { actorOf, HttpError, projectAccess, randomToken, requireMember, requireUser, sha256 } from '../auth.js';
 import { all, get, run, tx, type DB, type KeyRow, type ProjectRow } from '../db.js';
 import { exportFile, importFile, manifest, progress, projectLocales, publish, reviewable, upsertEntries } from '../services.js';
 import { tierOf, type Tier } from '../trust.js';
 import { checkLocale, imageSize, intParam, readMultipart } from '../util.js';
+import { assertMayPost, defaultReviewMode, getOrg, rescreenAfterChange } from '../posting/policy.js';
+
+const VISIBILITY = ['private', 'public'] as const;
+const REVIEW_MODES = ['standard', 'community'] as const;
+function pick<T extends string>(value: unknown, allowed: readonly T[], what: string): T | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!allowed.includes(value as T)) throw new HttpError(400, `${what} must be ${allowed.map((a) => `"${a}"`).join(' or ')}.`);
+  return value as T;
+}
 
 /** The organization's website, kept as an origin: the preview serves the whole site. Empty clears it. */
 function siteOrigin(value: string | null): string | null {
@@ -37,6 +46,10 @@ function projectJson(db: DB, p: ProjectRow) {
     peerApprovals: p.peer_approvals,
     version: p.version,
     bundleToken: p.bundle_token,
+    orgId: p.org_id,
+    visibility: p.visibility,
+    moderation: p.moderation,
+    reviewMode: p.review_mode,
     siteUrl: p.site_url,
     previewToken: p.preview_token,
     progress: progress(db, p.id) as (ReturnType<typeof progress>[number] & { reviewable?: number; tier?: Tier })[],
@@ -57,8 +70,10 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
   }));
 
   app.get('/api/v1/projects', async (req) => {
-    const { user, locales } = requireUser(db, req);
-    const rows = all<ProjectRow>(db, 'SELECT * FROM projects WHERE org_id = ? ORDER BY name', user.org_id);
+    // The org this sign-in is working in. Someone with no org has no projects of their own (the open pool is 2E's).
+    const { current: user, locales } = requireUser(db, req);
+    if (!user) return { projects: [] };
+    const rows = all<ProjectRow>(db, 'SELECT * FROM projects WHERE org_id = ? ORDER BY name', user.orgId);
     const projects = rows.map((p) => projectJson(db, p));
     // Localizers only see the languages they work on, and how much of it they can review.
     if (user.role !== 'admin') {
@@ -72,14 +87,21 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
     return { projects };
   });
 
-  app.post<{ Body: { name?: string; sourceLocale?: string; locales?: string[]; requireReview?: boolean } }>('/api/v1/projects', async (req) => {
-    const { user } = requireUser(db, req, ['admin']);
+  app.post<{ Body: { name?: string; sourceLocale?: string; locales?: string[]; requireReview?: boolean; visibility?: string; reviewMode?: string } }>('/api/v1/projects', async (req) => {
+    const { member } = requireMember(db, req, ['admin']);
+    assertMayPost(db, member.orgId);
+    const visibility = pick(req.body?.visibility, VISIBILITY, 'Visibility') ?? 'private';
+    const reviewMode = pick(req.body?.reviewMode, REVIEW_MODES, 'Review mode') ?? defaultReviewMode(getOrg(db, member.orgId), visibility);
     const name = req.body?.name?.trim();
     if (!name) throw new HttpError(400, 'Give the project a name.');
     const source = checkLocale(req.body?.sourceLocale ?? 'en');
     const locales = [...new Set((req.body?.locales ?? []).map(checkLocale))].filter((l) => l !== source);
     const id = tx(db, () => {
-      const r = run(db, 'INSERT INTO projects (org_id, name, source_locale, bundle_token, require_review) VALUES (?, ?, ?, ?, ?)', user.org_id, name, source, randomToken('pb_'), req.body?.requireReview === false ? 0 : 1);
+      const r = run(
+        db,
+        'INSERT INTO projects (org_id, name, source_locale, bundle_token, require_review, visibility, review_mode) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        member.orgId, name, source, randomToken('pb_'), req.body?.requireReview === false ? 0 : 1, visibility, reviewMode,
+      );
       const pid = Number(r.lastInsertRowid);
       for (const l of locales) run(db, 'INSERT INTO project_locales (project_id, locale) VALUES (?, ?)', pid, l);
       return pid;
@@ -88,15 +110,24 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
   });
 
   app.get<{ Params: { id: string } }>('/api/v1/projects/:id', async (req) => {
-    const { project, actor } = projectAccess(db, req, intParam(req.params.id), 'read');
+    const { project, actor, member } = projectAccess(db, req, intParam(req.params.id), 'read');
     const json = projectJson(db, project);
-    if (actor.kind === 'user' && actor.user.role !== 'admin') json.progress = json.progress.filter((r) => actor.locales.includes(r.locale));
+    if (actor.kind === 'user' && member?.role !== 'admin') json.progress = json.progress.filter((r) => actor.locales.includes(r.locale));
     return { project: json, manifest: manifest(db, project) };
   });
 
-  app.patch<{ Params: { id: string }; Body: { name?: string; requireReview?: boolean; peerApprovals?: number; locales?: string[]; siteUrl?: string | null } }>('/api/v1/projects/:id', async (req) => {
+  app.patch<{ Params: { id: string }; Body: { name?: string; requireReview?: boolean; peerApprovals?: number; locales?: string[]; visibility?: string; reviewMode?: string; siteUrl?: string | null } }>('/api/v1/projects/:id', async (req) => {
     const { project } = projectAccess(db, req, intParam(req.params.id), 'admin');
+    const visibility = pick(req.body?.visibility, VISIBILITY, 'Visibility');
+    const reviewMode = pick(req.body?.reviewMode, REVIEW_MODES, 'Review mode');
+    if (visibility === 'public') assertMayPost(db, project.org_id);
     tx(db, () => {
+      if (visibility && visibility !== project.visibility) {
+        // A project that changes who sees it goes through moderation again when it is (re)submitted.
+        run(db, "UPDATE projects SET visibility = ?, moderation = 'none' WHERE id = ?", visibility, project.id);
+        if (!reviewMode) run(db, 'UPDATE projects SET review_mode = ? WHERE id = ?', defaultReviewMode(getOrg(db, project.org_id), visibility), project.id);
+      }
+      if (reviewMode) run(db, 'UPDATE projects SET review_mode = ? WHERE id = ?', reviewMode, project.id);
       if (req.body?.name?.trim()) run(db, 'UPDATE projects SET name = ? WHERE id = ?', req.body.name.trim(), project.id);
       if (typeof req.body?.requireReview === 'boolean') run(db, 'UPDATE projects SET require_review = ? WHERE id = ?', req.body.requireReview ? 1 : 0, project.id);
       if (req.body?.peerApprovals !== undefined) {
@@ -163,7 +194,9 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
     const { project, actor } = projectAccess(db, req, intParam(req.params.id), 'push');
     if (!Array.isArray(req.body?.entries)) throw new HttpError(400, 'Send { "entries": [ { "key": "...", "source": "..." } ] }.');
     const locale = req.body.locale ? checkLocale(req.body.locale) : undefined;
-    return upsertEntries(db, project, req.body.entries, { locale, prune: !!req.body.prune, userId: actor.kind === 'user' ? actor.user.id : undefined });
+    const res = upsertEntries(db, project, req.body.entries, { locale, prune: !!req.body.prune, userId: actor.kind === 'user' ? actor.user.id : undefined });
+    rescreenAfterChange(db, project.id, res.created + res.updated);
+    return res;
   });
 
   app.post<{ Params: { id: string } }>('/api/v1/projects/:id/import', async (req) => {
@@ -173,7 +206,9 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
     const format = fields.format || detectFormat(file.filename);
     if (!format) throw new HttpError(400, 'Could not tell the file format; choose one.');
     const locale = fields.locale ? checkLocale(fields.locale) : undefined;
-    return importFile(db, project, file.buffer.toString('utf8'), format, { locale, prune: fields.prune === 'true', userId: actor.kind === 'user' ? actor.user.id : undefined });
+    const res = importFile(db, project, file.buffer.toString('utf8'), format, { locale, prune: fields.prune === 'true', userId: actor.kind === 'user' ? actor.user.id : undefined });
+    rescreenAfterChange(db, project.id, res.created + res.updated);
+    return res;
   });
 
   app.get<{ Params: { id: string }; Querystring: { format?: string; locale?: string } }>('/api/v1/projects/:id/export', async (req, reply) => {

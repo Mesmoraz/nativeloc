@@ -33,8 +33,14 @@ export interface Segment<N = unknown> {
   element: N;
   /** For attribute text: which attribute. */
   attr?: string;
-  /** For running text: the child nodes of `element` the segment was built from. */
+  /** For running text: the sibling nodes the segment was built from (children of `element` or of a wrapper inside it). */
   nodes?: N[];
+  /**
+   * For running text: the original nodes behind each placeholder, so a translation can be turned back into
+   * markup. Paired placeholders (`link1`) map to the wrapping elements, outermost first; single ones
+   * (`image1`, `br1`) map to the node itself.
+   */
+  parts?: Record<string, N[]>;
 }
 
 const SKIP = new Set(['script', 'style', 'noscript', 'template', 'svg', 'math', 'iframe', 'object', 'embed', 'canvas', 'pre', 'textarea']);
@@ -137,6 +143,7 @@ export function extractSegments<N>(root: N, tree: TreeAdapter<N>): Segment<N>[] 
   /** Turn a run of inline nodes into ICU text with paired placeholders. */
   function renderRun(nodes: N[]) {
     const labels: Record<string, string> = {};
+    const parts: Record<string, N[]> = {};
     const counts: Record<string, number> = {};
     const next = (base: string) => `${base}${(counts[base] = (counts[base] ?? 0) + 1)}`;
     const render = (n: N): string => {
@@ -147,6 +154,7 @@ export function extractSegments<N>(root: N, tree: TreeAdapter<N>): Segment<N>[] 
         if (tag === 'wbr') return '';
         const name = next(tag === 'br' ? 'br' : tag === 'img' ? 'image' : noTranslate(n) ? 'keep' : tag);
         labels[name] = noTranslate(n) ? 'kept as is' : ATOMIC[tag];
+        parts[name] = [n];
         return `{${name}}`;
       }
       if (UNWRAP.has(tag)) return tree.children(n).map(render).join('');
@@ -155,14 +163,16 @@ export function extractSegments<N>(root: N, tree: TreeAdapter<N>): Segment<N>[] 
       const kids = tree.children(n).filter((c) => isEl(c) || tree.text(c).trim());
       const only = kids.length === 1 && isEl(kids[0]) && !(tree.tag(kids[0]) in ATOMIC) && !noTranslate(kids[0]) ? kids[0] : null;
       if (only && tag !== 'a' && tree.tag(only) === 'a') return render(only);
-      const inner = (only && !UNWRAP.has(tree.tag(only)) ? tree.children(only) : tree.children(n)).map(render).join('');
+      const merged = only && !UNWRAP.has(tree.tag(only));
       const [base, what] = PAIR_NAMES[tag] ?? [tag, tag];
       const name = next(base);
+      parts[name] = merged ? [n, only] : [n];
+      const inner = (merged ? tree.children(only) : tree.children(n)).map(render).join('');
       labels[name] = `start of ${what}`;
       labels[`${name}_end`] = `end of ${what}`;
       return `{${name}}${inner}{${name}_end}`;
     };
-    return { source: nodes.map(render).join('').replace(/\s+/g, ' ').trim(), labels };
+    return { source: nodes.map(render).join('').replace(/\s+/g, ' ').trim(), labels, parts };
   }
 
   /** Text only, for deciding whether a run is worth translating. */
@@ -182,9 +192,9 @@ export function extractSegments<N>(root: N, tree: TreeAdapter<N>): Segment<N>[] 
       nodes = tree.children(only);
     }
     if (!isTranslatable(nodes.map(plainText).join(''))) return;
-    const { source, labels } = renderRun(nodes);
+    const { source, labels, parts } = renderRun(nodes);
     if (!source) return;
-    out.push({ key: keyFor(source), source, role: what, labels, element: owner, nodes });
+    out.push({ key: keyFor(source), source, role: what, labels, element: owner, nodes, parts });
   }
 
   function visit(el: N, area: string | null) {

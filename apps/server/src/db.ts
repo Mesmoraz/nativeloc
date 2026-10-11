@@ -202,7 +202,12 @@ export function openDb(path: string): DB {
 /** Columns added after a table was first shipped; CREATE TABLE IF NOT EXISTS won't add them to old databases. */
 function migrate(db: DB) {
   const cols = (table: string) => new Set(all<{ name: string }>(db, `PRAGMA table_info(${table})`).map((c) => c.name));
-  if (!cols('projects').has('peer_approvals')) db.exec('ALTER TABLE projects ADD COLUMN peer_approvals INTEGER NOT NULL DEFAULT 0');
+  const projectCols = cols('projects');
+  if (!projectCols.has('peer_approvals')) db.exec('ALTER TABLE projects ADD COLUMN peer_approvals INTEGER NOT NULL DEFAULT 0');
+  // Hosted preview: the organization's website, and the unguessable token in the private preview address.
+  if (!projectCols.has('site_url')) db.exec('ALTER TABLE projects ADD COLUMN site_url TEXT');
+  if (!projectCols.has('preview_token')) db.exec('ALTER TABLE projects ADD COLUMN preview_token TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS projects_preview_token ON projects(preview_token)');
 }
 
 type Param = string | number | bigint | null | Uint8Array;
@@ -247,6 +252,8 @@ export interface ProjectRow {
   require_review: number;
   peer_approvals: number;
   version: number;
+  site_url: string | null;
+  preview_token: string | null;
 }
 export interface KeyRow {
   id: number;

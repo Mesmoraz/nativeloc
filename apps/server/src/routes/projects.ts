@@ -8,6 +8,20 @@ import { exportFile, importFile, manifest, progress, projectLocales, publish, re
 import { tierOf, type Tier } from '../trust.js';
 import { checkLocale, imageSize, intParam, readMultipart } from '../util.js';
 
+/** The organization's website, kept as an origin: the preview serves the whole site. Empty clears it. */
+function siteOrigin(value: string | null): string | null {
+  const text = value?.trim();
+  if (!text) return null;
+  let url: URL;
+  try {
+    url = new URL(/^https?:\/\//i.test(text) ? text : `https://${text}`);
+  } catch {
+    throw new HttpError(400, "That website address doesn't look right. Try something like https://example.org.");
+  }
+  if (!/^https?:$/.test(url.protocol) || !(url.hostname.includes('.') || url.hostname === 'localhost')) throw new HttpError(400, 'Use the public address of the website, like https://example.org.');
+  return url.origin;
+}
+
 export interface ProjectDeps {
   db: DB;
   screenshotDir: string;
@@ -23,6 +37,8 @@ function projectJson(db: DB, p: ProjectRow) {
     peerApprovals: p.peer_approvals,
     version: p.version,
     bundleToken: p.bundle_token,
+    siteUrl: p.site_url,
+    previewToken: p.preview_token,
     progress: progress(db, p.id) as (ReturnType<typeof progress>[number] & { reviewable?: number; tier?: Tier })[],
   };
 }
@@ -78,7 +94,7 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
     return { project: json, manifest: manifest(db, project) };
   });
 
-  app.patch<{ Params: { id: string }; Body: { name?: string; requireReview?: boolean; peerApprovals?: number; locales?: string[] } }>('/api/v1/projects/:id', async (req) => {
+  app.patch<{ Params: { id: string }; Body: { name?: string; requireReview?: boolean; peerApprovals?: number; locales?: string[]; siteUrl?: string | null } }>('/api/v1/projects/:id', async (req) => {
     const { project } = projectAccess(db, req, intParam(req.params.id), 'admin');
     tx(db, () => {
       if (req.body?.name?.trim()) run(db, 'UPDATE projects SET name = ? WHERE id = ?', req.body.name.trim(), project.id);
@@ -87,6 +103,11 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
         const n = req.body.peerApprovals;
         if (!Number.isInteger(n) || n < 0 || n > 5) throw new HttpError(400, 'Peer approvals must be a whole number from 0 to 5.');
         run(db, 'UPDATE projects SET peer_approvals = ? WHERE id = ?', n, project.id);
+      }
+      if (req.body?.siteUrl !== undefined) {
+        const site = siteOrigin(req.body.siteUrl);
+        run(db, 'UPDATE projects SET site_url = ? WHERE id = ?', site, project.id);
+        if (site && !project.preview_token) run(db, 'UPDATE projects SET preview_token = ? WHERE id = ?', randomToken('pv_'), project.id);
       }
       if (req.body?.locales) {
         const wanted = [...new Set(req.body.locales.map(checkLocale))].filter((l) => l !== project.source_locale);
@@ -283,6 +304,13 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
     const token = randomToken('pb_');
     run(db, 'UPDATE projects SET bundle_token = ? WHERE id = ?', token, project.id);
     return { bundleToken: token };
+  });
+
+  app.post<{ Params: { id: string } }>('/api/v1/projects/:id/rotate-preview-token', async (req) => {
+    const { project } = projectAccess(db, req, intParam(req.params.id), 'admin');
+    const token = randomToken('pv_');
+    run(db, 'UPDATE projects SET preview_token = ? WHERE id = ?', token, project.id);
+    return { previewToken: token };
   });
 
   // ----- API tokens -----

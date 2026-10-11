@@ -59,13 +59,14 @@ npm install
 npm run demo
 ```
 
-That one command seeds the demo data the first time you run it and starts three things:
+That one command seeds the demo data the first time you run it and starts four things:
 
 | What | URL | What it is |
 |---|---|---|
 | Web app | http://localhost:5173 | Where translators work and admins manage projects |
 | Kiosk simulator | http://localhost:5174 | A pretend store kiosk, standing in for a device in the field |
-| API server | http://localhost:4600 | Used by both of the above |
+| Demo website | http://localhost:5175 | A pretend food bank website, for the website preview |
+| API server | http://localhost:4600 | Used by all of the above |
 
 ### Try the full loop (about 2 minutes)
 
@@ -127,6 +128,24 @@ Trust levels are per language:
 People an admin invites directly are Trusted. Admins can change anyone's level under
 *Team → Trust*, for example for an interpreter certification or a community partner's vouch. They edit
 each language's questions under *Team → Placement check*.
+
+### Try the website preview
+
+The preview shows an organization's real website with the translations volunteers have approved so far.
+Nothing gets installed on their site, and nothing is published. You send them the link.
+
+1. Open http://localhost:5173/preview/pv_demo_food_bank/ and pick **Español**. This is the demo food bank
+   site from :5175, in Spanish. Links and bold text inside sentences are kept. Click **Horarios y ubicaciones**:
+   you stay in the Spanish preview, and the text nobody has translated yet stays in English.
+2. Translate one of those English sentences as Lucas (*Cedar Valley Food Bank (website) · Español*), then
+   reload the preview. Approved translations show up right away, without publishing.
+3. As Avery, the project's *Overview* has a **Website preview** card with the site address, a link per
+   language, and **Replace links**, which stops the old links working.
+
+The preview reads the live site on every view, so it's always current, and it only works for the address
+saved on the project. Pages are marked `noindex`. The site's own scripts run in a sandbox, so they can't
+reach NativeLoc's cookies or API, and the private link is never sent to the site as a referrer. In production
+(`NODE_ENV=production`) the server refuses addresses on private networks.
 
 ### Demo accounts
 
@@ -217,6 +236,10 @@ when the site changes, edited sentences fall back to English until they're trans
 segmenter runs over a small tree interface, so a future in-page script can run the same code on the live
 page and find the same keys.
 
+**Website preview.** Save the site's address on the project (*Overview → Website preview*). Anyone with
+the private link sees the live site with approved translations swapped in. See
+[Try the website preview](#try-the-website-preview).
+
 **Screenshots.** Use the SDK capture helpers (exact boxes), the CLI, or upload and draw boxes in
 *Screenshots*.
 
@@ -245,12 +268,12 @@ label.set_text(loc.t("%d label printed", arg1=3))
 
 ```
 packages/core     ICU validation, plural rules, editor model, format adapters (shared by everything)
-packages/site     Website reader: page segmentation, crawler, site → strings
+packages/site     Website reader: page segmentation, crawler, site → strings, translated page rebuild
 packages/cli      nativeloc CLI
 apps/server       Fastify + node:sqlite API, auth, queue, publish, device endpoints
 apps/web          React app: localizer workspace + admin
 sdks/{js,python,android}
-examples/         sample strings.xml / .pot / JSON, web kiosk simulator, Linux demo
+examples/         sample strings.xml / .pot / JSON, web kiosk simulator, Linux demo, demo food bank site
 ```
 
 ## Development

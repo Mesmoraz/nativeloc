@@ -335,6 +335,22 @@ export function approveTranslation(db: DB, project: ProjectRow, user: UserRow, k
 
 // ---------- publish & export ----------
 
+/** Outdated text still ships if it is structurally valid against the new source. */
+const shippable = (r: { source: string; text: string | null; status: string | null }, locale: string) =>
+  r.text != null &&
+  (r.status === 'approved' || (r.status === 'outdated' && !validateTranslation(r.source, r.text, { locale }).some((i) => i.level === 'error')));
+
+/** What a publish would ship right now for one language, translated keys only (no source fallback). */
+export function liveTranslations(db: DB, project: ProjectRow, locale: string): Map<string, string> {
+  const rows = all<{ name: string; source: string; text: string | null; status: string | null }>(
+    db,
+    `SELECT k.name, k.source, t.text, t.status FROM keys k JOIN translations t ON t.key_id = k.id AND t.locale = ?
+     WHERE k.project_id = ? AND k.archived = 0`,
+    locale, project.id,
+  );
+  return new Map(rows.filter((r) => shippable(r, locale)).map((r) => [r.name, r.text!]));
+}
+
 function bundleFor(db: DB, project: ProjectRow, locale: string) {
   const rows = all<{ name: string; source: string; text: string | null; status: string | null }>(
     db,
@@ -346,10 +362,7 @@ function bundleFor(db: DB, project: ProjectRow, locale: string) {
   const out: Record<string, string> = {};
   let done = 0;
   for (const r of rows) {
-    // Outdated text still ships if it is structurally valid against the new source.
-    const usable =
-      r.text != null &&
-      (r.status === 'approved' || (r.status === 'outdated' && !validateTranslation(r.source, r.text, { locale }).some((i) => i.level === 'error')));
+    const usable = shippable(r, locale);
     if (isSource) {
       out[r.name] = r.source;
       done++;

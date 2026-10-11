@@ -45,6 +45,10 @@ export interface Project {
   peerApprovals: number;
   version: number;
   bundleToken: string;
+  /** The organization's website (an origin), for the hosted preview. */
+  siteUrl: string | null;
+  /** Secret part of the private preview address; set once a website is saved. */
+  previewToken: string | null;
   progress: LocaleProgressLike[];
 }
 

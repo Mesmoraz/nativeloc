@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "dev": "concurrently -n server,web -c blue,magenta \"npm run dev -w @nativeloc/server\" \"npm run dev -w @nativeloc/web\"",
-    "demo": "npm run seed && concurrently -n server,web,kiosk -c blue,magenta,green \"npm run dev -w @nativeloc/server\" \"npm run dev -w @nativeloc/web\" \"npm run dev -w @nativeloc/example-web-kiosk\"",
+    "demo": "npm run seed && concurrently -n server,web,kiosk,site -c blue,magenta,green,yellow \"npm run dev -w @nativeloc/server\" \"npm run dev -w @nativeloc/web\" \"npm run dev -w @nativeloc/example-web-kiosk\" \"node examples/food-bank-site/serve.mjs\"",
     "demo:reset": "npm run seed:reset && npm run demo",
     "start": "npm run build -w @nativeloc/web && npm run start -w @nativeloc/server",
     "seed": "npm run seed -w @nativeloc/server",

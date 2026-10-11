@@ -258,3 +258,45 @@ button.choice[aria-pressed='true'] { border-color: var(--accent); background: va
 .placement-grade { border-top: 1px solid var(--border); padding-top: 12px; }
 .grade-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
 .tier-note { border-left: 3px solid var(--accent); padding-left: 10px; }
+
+/* Online demo (GitHub Pages) */
+.demo-banner {
+  padding: 6px 16px;
+  font-size: 13px;
+  background: var(--accent-soft);
+  color: var(--text, inherit);
+  border-bottom: 1px solid var(--border);
+}
+.demo-banner button.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+.demo-banner-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.demo-inbox {
+  max-width: 640px;
+  margin: 8px auto 4px;
+  text-align: left;
+}
+.demo-mail {
+  background: var(--surface, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+}
+.demo-mail-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 6px 0 0;
+}

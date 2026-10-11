@@ -50,6 +50,18 @@ GET /b/{bundleToken}/es.json         → { "checkout": "Pagar", "cart_items": "{
 Untranslated keys fall back to the source text inside each bundle, so a device that downloads
 one file always has every string.
 
+## Try it online
+
+**https://mesmoraz.github.io/nativeloc/** runs the whole app in your browser: the real server code on an
+in-browser copy of the demo data (sql.js), no install. Sign in with one click as any demo account. What you
+change stays in your browser until you press **Reset demo**; emails it sends (like the sign-up confirmation)
+show up under **Inbox** in the bar at the top. It can't read other websites, so website crawls need a local
+copy, and the kiosk simulator isn't included.
+
+GitHub Actions publishes it from `main` ([pages-demo.yml](.github/workflows/pages-demo.yml)). To build it
+yourself: `npm run build:demo -w @nativeloc/web`, then `npx vite preview --mode demo apps/web` and open
+http://localhost:4173/nativeloc/.
+
 ## Run the demo
 
 You need **Node 22.5 or newer** (`node -v`), because the server uses the built-in `node:sqlite`.

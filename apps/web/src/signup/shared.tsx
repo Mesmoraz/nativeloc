@@ -69,6 +69,7 @@ export function ConfirmEmail({ email, compact }: { email: string; compact?: bool
         <div className="small muted">
           We sent a link to <b>{email}</b>. Open it to start translating or posting.
           {import.meta.env.DEV && ' (Dev: the link is printed in the server console.)'}
+          {import.meta.env.VITE_DEMO && ' (Demo: open it from Inbox in the bar at the top.)'}
         </div>
       </div>
       <div className="row">

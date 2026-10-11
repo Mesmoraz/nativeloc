@@ -1,0 +1,46 @@
+# Publishes the online demo to GitHub Pages: the web app with the server running in the browser on sql.js,
+# starting from the same demo data as `npm run demo` (see apps/web/scripts/build-demo.mjs).
+name: Pages demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Build the demo
+        run: npm run build:demo -w @nativeloc/web
+        env:
+          DEMO_BASE: /${{ github.event.repository.name }}/
+          VITE_DEMO_SEED: ${{ github.sha }}
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

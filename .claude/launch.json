@@ -4,20 +4,59 @@
     {
       "name": "nativeloc-api",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "@nativeloc/server"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "-w",
+        "@nativeloc/server"
+      ],
       "port": 4600
     },
     {
       "name": "nativeloc-web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "@nativeloc/web"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "-w",
+        "@nativeloc/web"
+      ],
       "port": 5173
     },
     {
       "name": "nativeloc-kiosk",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "@nativeloc/example-web-kiosk"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "-w",
+        "@nativeloc/example-web-kiosk"
+      ],
       "port": 5174
+    },
+    {
+      "name": "food-bank-site",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "examples/food-bank-site/serve.mjs"
+      ],
+      "port": 5175
+    },
+    {
+      "name": "pages-demo",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "preview",
+        "--mode",
+        "demo",
+        "--port",
+        "4173",
+        "--strictPort",
+        "apps/web"
+      ],
+      "port": 4173,
+      "url": "http://localhost:4173"
     }
   ]
 }

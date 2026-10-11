@@ -18,7 +18,8 @@ export async function api<T>(path: string, opts: { method?: string; body?: unkno
     init.body = JSON.stringify(opts.body);
     init.headers = { 'content-type': 'application/json' };
   }
-  const res = await fetch(path, init);
+  // The online demo answers API calls in the page (src/demo); the import is left out of other builds.
+  const res = import.meta.env.VITE_DEMO ? await (await import('./demo/runtime')).demoFetch(path, init) : await fetch(path, init);
   const data = res.headers.get('content-type')?.includes('json') ? await res.json() : await res.text();
   if (!res.ok) throw new ApiError(res.status, (data as { error?: string })?.error ?? res.statusText, (data as { details?: { issues?: Issue[] } })?.details);
   return data as T;

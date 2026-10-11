@@ -412,7 +412,19 @@ function ImportExport({ project, reload }: { project: Project; reload: () => Pro
               </option>
             ))}
           </select>
-          <a className="btn" href={`/api/v1/projects/${project.id}/export?${new URLSearchParams(exp)}`}>
+          <a
+            className="btn"
+            href={`/api/v1/projects/${project.id}/export?${new URLSearchParams(exp)}`}
+            onClick={
+              import.meta.env.VITE_DEMO
+                ? (e) => {
+                    e.preventDefault();
+                    const href = e.currentTarget.getAttribute('href')!;
+                    void import('../demo/download').then((m) => m.demoDownload(href));
+                  }
+                : undefined
+            }
+          >
             Download
           </a>
         </div>
@@ -792,7 +804,9 @@ function WebsitePreview({ project, saveSettings, reload }: { project: Project; s
   const [site, setSite] = useState(project.siteUrl ?? '');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState('');
-  const base = project.previewToken ? `${location.origin}/preview/${project.previewToken}` : null;
+  // The online demo renders previews in preview.html, since GitHub Pages can't route /preview/.
+  const previewRoot = import.meta.env.VITE_DEMO ? `${location.origin}${import.meta.env.BASE_URL}preview.html#/preview/` : `${location.origin}/preview/`;
+  const base = project.previewToken ? `${previewRoot}${project.previewToken}` : null;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();

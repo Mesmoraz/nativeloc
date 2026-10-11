@@ -3,12 +3,13 @@ import { Link } from 'react-router-dom';
 import { useSession } from '../App';
 import { api } from '../api';
 
-// Accounts created by `npm run seed`. Shown only in dev builds.
+// Accounts created by `npm run seed`. Shown in dev builds and the online demo.
 const DEMO_ACCOUNTS = [
   { email: 'maria@demo.test', password: 'demo-localizer-pass', who: 'María', role: 'Localizer · Spanish' },
   { email: 'lucas@demo.test', password: 'demo-reviewer-pass', who: 'Lucas', role: 'Reviewer · Spanish, French' },
+  { email: 'sam@demo.test', password: 'demo-localizer-pass', who: 'Sam', role: 'Volunteer · Spanish, French' },
   { email: 'yuki@demo.test', password: 'demo-localizer-pass', who: 'Yuki', role: 'Localizer · Japanese' },
-  { email: 'admin@demo.test', password: 'demo-admin-pass', who: 'Avery', role: 'Admin · manage projects' },
+  { email: 'admin@demo.test', password: 'demo-admin-pass', who: 'Avery', role: 'Admin · NativeLoc staff' },
 ];
 
 export function Login() {
@@ -61,7 +62,7 @@ export function Login() {
         <p className="small muted" style={{ margin: 0 }}>
           New here? <Link to="/signup">Create an account</Link> to volunteer or get your organization's information translated.
         </p>
-        {import.meta.env.DEV && (
+        {(import.meta.env.DEV || import.meta.env.VITE_DEMO) && (
           <div className="stack demo-accounts">
             <p className="muted" style={{ margin: 0 }}>
               Demo: sign in as…

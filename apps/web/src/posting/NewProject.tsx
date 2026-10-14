@@ -124,6 +124,7 @@ export function NewProjectContent() {
   const navigate = useNavigate();
   const [project, setProject] = useState<Project | null>(null);
   const [step, setStep] = useState<2 | 3>(2);
+  const [pasting, setPasting] = useState(false);
   const [result, setResult] = useState<SubmitResponse | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -170,14 +171,15 @@ export function NewProjectContent() {
               </p>
             </div>
             <section className="card">
-              <AddContent project={project} onAdded={load} />
+              <AddContent project={project} onAdded={load} onPending={setPasting} />
             </section>
+            {pasting && <div className="alert small">You have pasted text that isn’t added yet. Press Preview, then “Add” under the text box, before you go on.</div>}
             <div className="row post-actions">
               <Link to={`/p/${project.id}`} className="btn ghost">
                 Finish later
               </Link>
               <span className="spacer" />
-              <button className="primary" disabled={!strings} onClick={() => setStep(3)}>
+              <button className="primary" disabled={!strings || pasting} onClick={() => setStep(3)}>
                 Next: {project.visibility === 'public' ? 'submit' : 'review'}
               </button>
             </div>

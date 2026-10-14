@@ -7,18 +7,22 @@ import './community.css';
 type Item = ReadyListResponse['items'][number];
 
 const FLAG_LABELS: Record<FlagReason, string> = { meaning: 'wrong meaning', grammar: 'grammar', tone: 'tone', offensive: 'offensive' };
+/** Pasted and crawled text gets generated keys (w.2a756lg34nv) that mean nothing to a requester; the text itself is the label. */
+const isGeneratedKey = (key: string) => /^w.[a-z0-9]+$/.test(key);
+const itemLabel = (i: { key: string; source: string }) => (isGeneratedKey(i.key) ? (i.source.length > 40 ? `${i.source.slice(0, 40)}…` : i.source) : i.key);
 const itemId = (i: { keyId: number; locale: string }) => `${i.keyId}:${i.locale}`;
 
 /**
  * The poster's "Ready to publish" list (community review): text volunteers agreed on, with its review count and
  * any flags or disagreement. Publish all, publish one, edit (saves and publishes), or send back with a note.
- * Publishing here makes text approved; the bundle still goes to devices with "Publish version N" as before.
+ * Publishing here makes text approved; the page then offers to publish a new version in one step.
  */
 export function ReadyToPublish({ project, reload }: { project: Project; reload: () => Promise<void> }) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [locale, setLocale] = useState('');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [offer, setOffer] = useState(false);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const [sending, setSending] = useState<{ id: string; note: string } | null>(null);
 
@@ -39,6 +43,7 @@ export function ReadyToPublish({ project, reload }: { project: Project; reload: 
       setSending(null);
       await Promise.all([load(), reload()]);
       setMsg({ kind: 'ok', text });
+      setOffer(false);
     } catch (e) {
       const issues = e instanceof ApiError ? e.details?.issues : undefined;
       setMsg({ kind: 'error', text: issues?.length ? issues.map((i) => i.message).join(' ') : (e as Error).message });
@@ -52,19 +57,26 @@ export function ReadyToPublish({ project, reload }: { project: Project; reload: 
       const r = await api<{ approved: number }>(`/api/v1/projects/${project.id}/ready/approve`, {
         body: list ? { items: list.map((i) => ({ keyId: i.keyId, locale: i.locale })) } : {},
       });
-      return `${r.approved} translation${r.approved === 1 ? '' : 's'} approved. Publish a new version on the Overview tab to send ${r.approved === 1 ? 'it' : 'them'} to devices.`;
+      return `${r.approved} translation${r.approved === 1 ? '' : 's'} approved.`;
+    }).then(() => setOffer(true));
+
+  /** One step for the common case: the text just approved goes live as a new version. */
+  const publishVersion = () =>
+    act(async () => {
+      const r = await api<{ manifest: { version: number } }>(`/api/v1/projects/${project.id}/publish`, { method: 'POST' });
+      return `Version ${r.manifest.version} is published. The approved translations are now live.`;
     });
 
   const saveEdit = (item: Item, text: string) =>
     act(async () => {
       await api(`/api/v1/translations/${item.keyId}/${item.locale}`, { method: 'PUT', body: { text, approve: true } });
-      return `Saved your wording of "${item.key}" and approved it.`;
+      return `Saved your wording of "${itemLabel(item)}" and approved it.`;
     });
 
   const sendBack = (item: Item, note: string) =>
     act(async () => {
       await api(`/api/v1/projects/${project.id}/ready/send-back`, { body: { keyId: item.keyId, locale: item.locale, note: note.trim() || undefined } });
-      return `Sent "${item.key}" back to reviewers. It now needs 5 approvals.`;
+      return `Sent "${itemLabel(item)}" back to reviewers. It now needs 5 approvals.`;
     });
 
   const locales = project.locales.filter((l) => l !== project.sourceLocale);
@@ -93,10 +105,18 @@ export function ReadyToPublish({ project, reload }: { project: Project; reload: 
           </button>
         </div>
         <p className="muted small" style={{ margin: 0 }}>
-          Volunteers reviewed these and agreed. Nothing reaches your devices until you publish it here and then publish a new version.
+          Volunteers reviewed these and agreed. Nothing goes live until you publish it here and then publish a new version.
           Community-reviewed text is labelled "Community-reviewed, not verified" in the apps.
         </p>
         {msg && <div className={`alert ${msg.kind}`}>{msg.text}</div>}
+        {offer && msg?.kind === 'ok' && (
+          <div className="row">
+            <button className="primary" disabled={busy} onClick={() => void publishVersion()}>
+              Publish version {project.version + 1} now
+            </button>
+            <span className="small muted">Approved text only reaches people once a new version is published.</span>
+          </div>
+        )}
       </div>
 
       {items && !items.length && <div className="card muted">Nothing is waiting for you. Text shows up here once volunteers agree on it.</div>}
@@ -106,7 +126,7 @@ export function ReadyToPublish({ project, reload }: { project: Project; reload: 
         return (
           <div key={id} className="card stack ready-item">
             <div className="row">
-              <code className="small">{item.key}</code>
+              {!isGeneratedKey(item.key) && <code className="small">{item.key}</code>}
               <span className="badge">{languageName(item.locale)}</span>
               <span className="small muted">
                 {item.review.reviews} review{item.review.reviews === 1 ? '' : 's'} · {item.review.approvals} approval{item.review.approvals === 1 ? '' : 's'}

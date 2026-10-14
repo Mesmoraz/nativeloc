@@ -5,7 +5,7 @@ import { addMembership, get, getUser, memberOf, run, tx, type DB, type OrgRow, t
 import { normalizeEin } from '../moderation/eobmf.js';
 import { startVerification } from '../moderation/verify.js';
 import { assertEmailVerified, isWaitlisted } from '../signup/gate.js';
-import { resendVerification, sendVerification, verifyEmail } from '../signup/mailer.js';
+import { publicUrl, resendVerification, sendVerification, verifyEmail } from '../signup/mailer.js';
 import { setTier } from '../trust.js';
 import { checkLocale, intParam } from '../util.js';
 import { meResponse, orgJson, publicUser, setCurrentOrg } from './auth.js';
@@ -81,7 +81,7 @@ export function signupRoutes(app: FastifyInstance, { db }: RouteDeps) {
     // No org and no languages yet: onboarding picks them. Trust starts at 'new' everywhere (no user_languages rows).
     const id = Number(run(db, "INSERT INTO users (email, name, password_hash, locales, email_verified) VALUES (?, ?, ?, '[]', 0)", email, name, hashPassword(password)).lastInsertRowid);
     const user = getUser(db, id)!;
-    await sendVerification(db, user);
+    await sendVerification(db, user, publicUrl(req));
     createSession(db, reply, id);
     return { user: publicUser(db, user) };
   });
@@ -95,7 +95,7 @@ export function signupRoutes(app: FastifyInstance, { db }: RouteDeps) {
 
   app.post('/api/v1/auth/resend-verification', async (req) => {
     const { user } = requireUser(db, req);
-    await resendVerification(db, user);
+    await resendVerification(db, user, publicUrl(req));
     return { ok: true };
   });
 

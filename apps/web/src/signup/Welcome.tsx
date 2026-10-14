@@ -317,7 +317,7 @@ function DetailsStep({ type, onBack, onCreated }: { type: OrgType; onBack: () =>
         </button>
         <span className="spacer" />
         <button className="primary" disabled={busy || !verified} title={verified ? undefined : 'Confirm your email first'}>
-          {type === 'business' ? 'Join the waitlist' : 'Create account'}
+          {type === 'business' ? 'Join the waitlist' : type === 'individual' ? 'Continue' : type === 'nonprofit' ? 'Set up nonprofit' : 'Create group'}
         </button>
       </div>
       {!verified && <p className="small muted" style={{ margin: 0, textAlign: 'right' }}>Confirm your email to finish this step.</p>}
@@ -353,7 +353,7 @@ function DoneStep({ created }: { created: CreateOrgResponse }) {
       <p className="muted" style={{ margin: 0 }}>
         Next, add what you'd like translated: paste text, upload a file, or point us at your website.
       </p>
-      <Link className="btn primary" to="/">
+      <Link className="btn primary" to="/new">
         Create your first project
       </Link>
     </div>

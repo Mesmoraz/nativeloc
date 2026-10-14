@@ -119,7 +119,7 @@ function Overview({ project, manifest, reload }: { project: Project; manifest: M
         .filter(([l]) => l !== project.sourceLocale)
         .map(([l, q]) => (qualityLabel(q) ? `${languageName(l)}: ${qualityLabel(q)}` : null))
         .filter(Boolean);
-      setMsg(`Published version ${r.manifest.version}. Devices will pick it up on their next check.${labels.length ? ` ${labels.join(' · ')}.` : ''}`);
+      setMsg(`Published version ${r.manifest.version}. ${project.reviewMode === 'community' ? 'It is live now.' : 'Devices will pick it up on their next check.'}${labels.length ? ` ${labels.join(' · ')}.` : ''}`);
       await reload();
     } catch (e) {
       setMsg((e as Error).message);
@@ -193,10 +193,12 @@ function Overview({ project, manifest, reload }: { project: Project; manifest: M
           </label>
           <button style={{ alignSelf: 'flex-end' }}>Update languages</button>
         </form>
+        {project.reviewMode !== 'community' && (
         <label className="row small">
           <input type="checkbox" checked={project.requireReview} onChange={(e) => void saveSettings({ requireReview: e.target.checked })} />
           Translations by localizers need a reviewer's approval before they ship
         </label>
+        )}
         {project.reviewMode === 'community' ? (
           <p className="small muted" style={{ margin: 0 }}>
             Community review: volunteers agree on each translation (3 approvals, or 5 after a flag or an edit), then it waits for you under Ready to publish.
@@ -218,7 +220,7 @@ function Overview({ project, manifest, reload }: { project: Project; manifest: M
       <WebsitePreview project={project} saveSettings={saveSettings} reload={reload} />
 
       <div className="card stack">
-        <h2 style={{ margin: 0 }}>Publish to devices</h2>
+        <h2 style={{ margin: 0 }}>{project.reviewMode === 'community' ? 'Publish a new version' : 'Publish to devices'}</h2>
         <p className="muted" style={{ margin: 0 }}>
           Publishing snapshots every approved translation. Untranslated text falls back to {languageName(project.sourceLocale)}.
           {manifest ? ` Live now: version ${manifest.version}, published ${new Date(manifest.publishedAt).toLocaleString()}.` : ' Nothing published yet.'}

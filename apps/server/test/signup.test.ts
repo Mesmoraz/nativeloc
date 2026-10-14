@@ -80,6 +80,29 @@ describe('sign-up and email verification', () => {
     expect((await app.inject({ method: 'POST', url: '/api/v1/auth/resend-verification', headers: as('ana@t.test') })).json()).toEqual({ ok: true });
   });
 
+  it('builds the confirmation link from the public URL, else the request origin', async () => {
+    const link = (email: string) => /(https?:\/\/\S+)\/verify-email/.exec(sent.filter((m) => m.to === email).at(-1)!.body)![1];
+    const join = (email: string, headers: Record<string, string> = {}) =>
+      app.inject({ method: 'POST', url: '/api/v1/auth/signup', headers, payload: { name: 'Link', email, password: pw } });
+    const saved = { public: process.env.NATIVELOC_PUBLIC_URL, app: process.env.APP_URL };
+    delete process.env.NATIVELOC_PUBLIC_URL;
+    delete process.env.APP_URL;
+    try {
+      await join('origin@t.test', { host: 'nativeloc.test:8787' });
+      expect(link('origin@t.test')).toBe('http://nativeloc.test:8787');
+      await join('browser@t.test', { host: 'api.test:4600', origin: 'http://web.test:5173' });
+      expect(link('browser@t.test')).toBe('http://web.test:5173');
+      process.env.NATIVELOC_PUBLIC_URL = 'https://app.nativeloc.test/';
+      await join('public@t.test', { host: 'nativeloc.test:8787' });
+      expect(link('public@t.test')).toBe('https://app.nativeloc.test');
+    } finally {
+      for (const [k, v] of [['NATIVELOC_PUBLIC_URL', saved.public], ['APP_URL', saved.app]] as const) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
   it('confirms the email once per link', async () => {
     const token = lastLink('ana@t.test');
     const res = await app.inject({ method: 'POST', url: '/api/v1/auth/verify-email', payload: { token } });

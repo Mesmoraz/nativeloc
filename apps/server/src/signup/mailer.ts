@@ -40,8 +40,9 @@ export function setMailer(m: Mailer) {
   mailer = m;
 }
 
-/** Where links in emails point (the web app). */
-export const appUrl = () => (process.env.APP_URL ?? 'http://localhost:5173').replace(/\/$/, '');
+/** Where links in emails point (the web app): NATIVELOC_PUBLIC_URL (or APP_URL), else the origin the browser sent (the dev proxy rewrites Host), else the host the request came in on. */
+export const publicUrl = (req: { protocol: string; headers: { host?: string; origin?: string } }) =>
+  (process.env.NATIVELOC_PUBLIC_URL ?? process.env.APP_URL ?? req.headers.origin ?? `${req.protocol}://${req.headers.host}`).replace(/\/$/, '');
 
 /** Writes the message to the outbox, then tries to deliver it. Never throws for delivery failures. */
 export async function sendEmail(db: DB, userId: number | null, kind: string, msg: OutgoingEmail) {
@@ -64,10 +65,10 @@ export const RESEND_PER_DAY = 5;
 
 export const isEmailVerified = (db: DB, userId: number) => get<{ v: number }>(db, 'SELECT email_verified AS v FROM users WHERE id = ?', userId)?.v === 1;
 
-export async function sendVerification(db: DB, user: UserRow) {
+export async function sendVerification(db: DB, user: UserRow, baseUrl: string) {
   const token = randomToken('ev_');
   run(db, "INSERT INTO email_tokens (token_hash, user_id, purpose, email, expires_at) VALUES (?, ?, 'verify', ?, ?)", sha256(token), user.id, user.email, Date.now() + VERIFY_HOURS * 3600e3);
-  const link = `${appUrl()}/verify-email?token=${token}`;
+  const link = `${baseUrl}/verify-email?token=${token}`;
   await sendEmail(db, user.id, 'verify', {
     to: user.email,
     subject: 'Confirm your email for NativeLoc',
@@ -75,7 +76,7 @@ export async function sendVerification(db: DB, user: UserRow) {
   });
 }
 
-export async function resendVerification(db: DB, user: UserRow) {
+export async function resendVerification(db: DB, user: UserRow, baseUrl: string) {
   if (isEmailVerified(db, user.id)) throw new HttpError(409, 'Your email is already confirmed.');
   const recent = get<{ last: string | null; day: number }>(
     db,
@@ -84,7 +85,7 @@ export async function resendVerification(db: DB, user: UserRow) {
   )!;
   if (recent.day >= RESEND_PER_DAY) throw new HttpError(429, 'We have sent several emails today. Check your spam folder, or try again tomorrow.');
   if (recent.last && Date.now() - new Date(recent.last + 'Z').getTime() < RESEND_GAP_SECONDS * 1000) throw new HttpError(429, 'We just sent one. Give it a minute, then try again.');
-  await sendVerification(db, user);
+  await sendVerification(db, user, baseUrl);
 }
 
 /** Marks the account verified. 404 for unknown, used or expired tokens, or if the account's email changed since. */

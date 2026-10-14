@@ -5,7 +5,7 @@ import { addMembership, all, get, getUser, memberOf, ROLES, run, tx, USER_COLUMN
 import { setTier, tierOf, tiersOf, TIERS, vouchFor, type Tier } from '../trust.js';
 import { checkLocale } from '../util.js';
 import { orgMayVouch } from '../signup/gate.js';
-import { isEmailVerified, sendVerification } from '../signup/mailer.js';
+import { isEmailVerified, publicUrl, sendVerification } from '../signup/mailer.js';
 
 /**
  * `role` is the user's role in `orgId` (default: their first org), or null if they have no role there.
@@ -36,7 +36,7 @@ export function meResponse(db: DB, actor: UserActor) {
 export const setCurrentOrg = (db: DB, actor: UserActor, orgId: number) => run(db, 'UPDATE sessions SET org_id = ? WHERE token_hash = ?', orgId, actor.sessionHash);
 
 /** A new account from an invite or join link. Unverified accounts get the confirmation email. */
-async function createAccount(db: DB, fields: { email: string; name: string; password: string; locales: string[] }, verified: boolean, setup: (id: number) => void) {
+async function createAccount(db: DB, baseUrl: string, fields: { email: string; name: string; password: string; locales: string[] }, verified: boolean, setup: (id: number) => void) {
   const id = tx(db, () => {
     const r = run(
       db,
@@ -48,7 +48,7 @@ async function createAccount(db: DB, fields: { email: string; name: string; pass
     return id;
   });
   const user = getUser(db, id)!;
-  if (!verified) await sendVerification(db, user);
+  if (!verified) await sendVerification(db, user, baseUrl);
   return user;
 }
 
@@ -140,7 +140,7 @@ export function authRoutes(app: FastifyInstance, db: DB) {
     if (password.length < 8) throw new HttpError(400, 'Password must be at least 8 characters.');
     if (get(db, 'SELECT 1 FROM users WHERE email = ?', email)) throw new HttpError(409, 'An account with that email already exists. Sign in, then open this link again.');
     // An invite to a named address confirms that address; one the invitee typed in still needs the emailed link.
-    const user = await createAccount(db, { email, name, password, locales: invLocales }, !!inv.email, (id) => {
+    const user = await createAccount(db, publicUrl(req), { email, name, password, locales: invLocales }, !!inv.email, (id) => {
       addMembership(db, id, inv.org_id, inv.role);
       vouch(id);
       useInvite();
@@ -223,7 +223,7 @@ export function authRoutes(app: FastifyInstance, db: DB) {
     if (password.length < 8) throw new HttpError(400, 'Password must be at least 8 characters.');
     if (get(db, 'SELECT 1 FROM users WHERE email = ?', email)) throw new HttpError(409, 'An account with that email already exists. Sign in, then open this link again to add the language.');
     // Join links are shared publicly, so the address isn't confirmed until the emailed link is opened.
-    const user = await createAccount(db, { email, name, password, locales }, false, (id) => {
+    const user = await createAccount(db, publicUrl(req), { email, name, password, locales }, false, (id) => {
       addMembership(db, id, link.org_id, 'localizer');
       for (const l of locales) setTier(db, id, l, 'new', 'joined from sign-up link');
     });

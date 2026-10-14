@@ -10,8 +10,8 @@ const PASTE_MAX_CHARS = 100_000;
 /** Matches the server's CRAWL_PAGE_LIMIT. */
 const CRAWL_PAGE_LIMIT = 15;
 
-/** The three ways to add text to a project. `onAdded` runs after strings were saved. */
-export function AddContent({ project, onAdded }: { project: Project; onAdded: () => void | Promise<void> }) {
+/** The three ways to add text to a project. `onAdded` runs after strings were saved; `onPending` reports pasted text that isn't added yet. */
+export function AddContent({ project, onAdded, onPending }: { project: Project; onAdded: () => void | Promise<void>; onPending?: (pending: boolean) => void }) {
   const [way, setWay] = useState<Way>('paste');
   return (
     <div className="stack">
@@ -29,14 +29,14 @@ export function AddContent({ project, onAdded }: { project: Project; onAdded: ()
           </button>
         ))}
       </div>
-      {way === 'paste' && <PasteText project={project} onAdded={onAdded} />}
+      {way === 'paste' && <PasteText project={project} onAdded={onAdded} onPending={onPending} />}
       {way === 'file' && <UploadFile project={project} onAdded={onAdded} />}
       {way === 'website' && <Website project={project} onAdded={onAdded} />}
     </div>
   );
 }
 
-function PasteText({ project, onAdded }: { project: Project; onAdded: () => void | Promise<void> }) {
+function PasteText({ project, onAdded, onPending }: { project: Project; onAdded: () => void | Promise<void>; onPending?: (pending: boolean) => void }) {
   const [text, setText] = useState('');
   const [context, setContext] = useState('');
   const [split, setSplit] = useState<'paragraphs' | 'sentences'>('paragraphs');
@@ -45,6 +45,10 @@ function PasteText({ project, onAdded }: { project: Project; onAdded: () => void
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const tooLong = text.length > PASTE_MAX_CHARS;
+  useEffect(() => {
+    onPending?.(!!text.trim());
+    return () => onPending?.(false);
+  }, [text, onPending]);
 
   async function send(dryRun: boolean) {
     setError('');

@@ -55,6 +55,8 @@ export interface MeResponse {
 export type Visibility = 'private' | 'public';
 export type Moderation = 'none' | 'pending' | 'approved' | 'rejected';
 export type ReviewMode = 'standard' | 'community';
+/** How soon volunteers' cards should come from this project: part of the card-order score (server pool/score.ts). */
+export type ProjectPriority = 'low' | 'normal' | 'high';
 /** 'ready': community review agreed, waiting for the poster (2C). Bundles ship only 'approved'. */
 export type TranslationStatus = 'outdated' | 'review' | 'ready' | 'approved';
 
@@ -65,6 +67,7 @@ export interface ProjectSharing {
   visibility: Visibility;
   moderation: Moderation;
   reviewMode: ReviewMode;
+  priority: ProjectPriority;
 }
 
 // ---------- 2A: sign-up and onboarding ----------
@@ -126,7 +129,7 @@ export type ReportReason = 'spam' | 'commercial' | 'harmful';
 /** GET /api/v1/staff/moderation: projects with moderation 'pending' (screened out, or paused by reports). */
 export interface ModerationQueueResponse {
   projects: {
-    project: { id: number; name: string; visibility: Visibility; strings: number; submittedAt: string | null };
+    project: { id: number; name: string; visibility: Visibility; priority: ProjectPriority; strings: number; submittedAt: string | null };
     org: OrgSummary;
     /** From the automatic screen, e.g. "3 phone numbers". */
     reasons: string[];
@@ -223,6 +226,8 @@ export interface ManifestQuality {
 export interface ProjectSharingRequest {
   visibility?: Visibility;
   reviewMode?: ReviewMode;
+  /** Org admins set it on the Sharing tab; staff use PUT /api/v1/staff/projects/:id/priority. */
+  priority?: ProjectPriority;
 }
 /** POST /api/v1/projects/:id/paste: split into strings. Response: PasteResponse. */
 export interface PasteRequest {

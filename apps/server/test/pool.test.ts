@@ -86,13 +86,13 @@ describe('open pool access', () => {
 });
 
 describe('pool sessions', () => {
-  it('draws from the pool and member projects only, urgent first, then verified nonprofits, then community orgs', async () => {
+  it('draws from the pool and member projects only, urgent first, then the verified-nonprofit boost', async () => {
     const s = await session('vol@pool.test', '&nonprofitsOnly=0');
     const names = s.cards.map((c: C) => c.project.name);
     expect(new Set(names)).toEqual(new Set(['Community', 'Nonprofit', 'Claimed', 'Home']));
     expect(s.cards[0].item.keyId).toBe(ids.urgent);
     const translate = s.cards.filter((c: C) => c.type === 'translate').map((c: C) => c.project.name);
-    expect(translate.slice(1)).toEqual(['Nonprofit', 'Community', 'Claimed', 'Home']);
+    expect(translate[1]).toBe('Nonprofit'); // all new, so the +24 verified boost decides
     expect(s.cards.find((c: C) => c.project.name === 'Nonprofit').org).toEqual({ id: expect.any(Number), name: 'Food Bank', type: 'nonprofit', verified: true, description: 'About Food Bank' });
     expect(s.cards.find((c: C) => c.project.name === 'Claimed').org.verified).toBe(false);
   });
@@ -119,5 +119,94 @@ describe('pool sessions', () => {
     expect(s.cards.filter((c: C) => c.type === 'review')).toEqual([]);
     const res = await app.inject({ method: 'POST', url: `/api/v1/translations/${ids.reviewKey}/es/approve`, headers: as('requester@pool.test') });
     expect(res.statusCode).toBe(403);
+  });
+});
+
+// Card order: how long a string has waited, plus boosts (src/pool/score.ts). Each case uses its own language so it
+// only sees its own projects.
+describe('pool session score', () => {
+  const age = (k: number, hours: number) => run(db, "UPDATE keys SET created_at = datetime('now', ?) WHERE id = ?", `-${hours} hours`, k);
+  const first = async (email: string, n = 1) => (await session(email)).cards.slice(0, n).map((c: C) => c.project.name);
+
+  it('puts a long-waiting community string ahead of a new verified-nonprofit one', async () => {
+    const waiting = project(org('Fr Club'), 'FrWaiting', ['fr']);
+    const fresh = project(org('Fr Charity', 'nonprofit', 'verified'), 'FrFresh', ['fr']);
+    age(key(waiting, 'fr-w'), 200);
+    key(fresh, 'fr-f');
+    await user('fr@pool.test', ['fr']);
+    expect(await first('fr@pool.test', 2)).toEqual(['FrWaiting', 'FrFresh']);
+  });
+
+  it('lets the verified-nonprofit boost win when the wait gap is smaller than the boost', async () => {
+    const waiting = project(org('It Club'), 'ItWaiting', ['it']);
+    const charity = project(org('It Charity', 'nonprofit', 'verified'), 'ItCharity', ['it']);
+    age(key(waiting, 'it-w'), 10);
+    key(charity, 'it-c');
+    await user('it@pool.test', ['it']);
+    expect(await first('it@pool.test')).toEqual(['ItCharity']);
+  });
+
+  it('still puts an urgent string first, even against a string that waited a long time', async () => {
+    const old = project(org('Pt Old'), 'PtOld', ['pt']);
+    const hot = project(org('Pt Hot'), 'PtHot', ['pt']);
+    age(key(old, 'pt-old'), 600);
+    key(hot, 'pt-hot', 1);
+    await user('pt@pool.test', ['pt']);
+    const s = await session('pt@pool.test');
+    expect(s.cards[0].project.name).toBe('PtHot');
+    expect(s.cards[0].urgent).toBe(true);
+  });
+
+  it('ranks a high-priority project above a normal one at equal wait, and low below', async () => {
+    const [lo, hi, mid] = ['Low', 'High', 'Mid'].map((n) => project(org(`Ja ${n}`), `Ja${n}`, ['ja']));
+    run(db, "UPDATE projects SET priority = 'high' WHERE id = ?", hi);
+    run(db, "UPDATE projects SET priority = 'low' WHERE id = ?", lo);
+    for (const p of [lo, hi, mid]) age(key(p, 'ja-k'), 100);
+    await user('ja@pool.test', ['ja']);
+    expect(await first('ja@pool.test', 3)).toEqual(['JaHigh', 'JaMid', 'JaLow']);
+  });
+
+  it('takes at most two cards per project while others have work, and relaxes when one project is left', async () => {
+    const [a, b] = ['A', 'B'].map((n) => project(org(`Ko ${n}`), `Ko${n}`, ['ko']));
+    for (let i = 0; i < 5; i++) {
+      age(key(a, `ko-a${i}`), 300 + i); // A has waited longer, but the cap still lets B in
+      key(b, `ko-b${i}`);
+    }
+    await user('ko@pool.test', ['ko']);
+    const names = await first('ko@pool.test', 10);
+    expect(names.slice(0, 4).filter((n: string) => n === 'KoA')).toHaveLength(2);
+    expect(names.slice(0, 4).filter((n: string) => n === 'KoB')).toHaveLength(2);
+    expect(names).toHaveLength(10);
+    const solo = project(org('Sv Solo'), 'SvSolo', ['sv']);
+    for (let i = 0; i < 5; i++) key(solo, `sv-${i}`);
+    await user('sv@pool.test', ['sv']);
+    expect(await first('sv@pool.test', 10)).toEqual(Array(5).fill('SvSolo'));
+  });
+
+  it('counts an outdated string from when its source changed', async () => {
+    const p = project(org('Nl Club'), 'NlOne', ['nl']);
+    const q = project(org('Nl Other'), 'NlTwo', ['nl']);
+    const k = key(p, 'nl-old');
+    age(k, 700); // created long ago, but its source changed just now
+    run(db, "INSERT INTO translations (key_id, locale, text, status) VALUES (?, 'nl', 'x', 'outdated')", k);
+    run(db, "UPDATE keys SET source_changed_at = datetime('now') WHERE id = ?", k);
+    age(key(q, 'nl-q'), 50);
+    await user('nl@pool.test', ['nl']);
+    expect(await first('nl@pool.test', 2)).toEqual(['NlTwo', 'NlOne']);
+  });
+
+  it('lets org admins and staff set a project priority', async () => {
+    const o = org('Pr Org');
+    const p = project(o, 'PrProject', ['de']);
+    await user('pradmin@pool.test', ['de'], {}, [o, 'admin']);
+    const staff = await user('prstaff@pool.test', ['de']);
+    run(db, 'UPDATE users SET is_staff = 1 WHERE id = ?', staff);
+    const patch = (priority: string) => app.inject({ method: 'PATCH', url: `/api/v1/projects/${p}`, headers: as('pradmin@pool.test'), payload: { priority } });
+    expect((await patch('high')).json().project.priority).toBe('high');
+    expect((await patch('urgent')).statusCode).toBe(400);
+    const put = (email: string, priority: string) => app.inject({ method: 'PUT', url: `/api/v1/staff/projects/${p}/priority`, headers: as(email), payload: { priority } });
+    expect((await put('pradmin@pool.test', 'low')).statusCode).toBe(403);
+    expect((await put('prstaff@pool.test', 'low')).json().project.priority).toBe('low');
+    expect((await app.inject({ url: `/api/v1/projects/${p}`, headers: as('pradmin@pool.test') })).json().project.priority).toBe('low');
   });
 });

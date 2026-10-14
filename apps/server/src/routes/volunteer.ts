@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { HttpError, requireUser } from '../auth.js';
 import { all, get, run, type DB, type Member, type OrgRow, type ProjectRow, type Role, type UserRow } from '../db.js';
-import { isVerifiedNonprofit, openPoolRole, passesNonprofitsOnly, poolRank } from '../pool/access.js';
-import { projectLocales, queue, reviewRight } from '../services.js';
+import { isVerifiedNonprofit, openPoolRole, passesNonprofitsOnly } from '../pool/access.js';
+import { hoursSince, score } from '../pool/score.js';
+import { projectLocales, queue, reviewFilter, reviewRight } from '../services.js';
 import { stats } from '../xp.js';
 
 // Shapes are the contract in apps/web/src/volunteer/types.ts (and CardOrg in apps/web/src/contracts.ts).
@@ -21,7 +22,7 @@ interface Card {
   project: { id: number; name: string; sourceLocale: string };
   org: CardOrg;
   locale: string;
-  /** The string is marked urgent; urgent strings come first. */
+  /** The string is marked urgent. */
   urgent: boolean;
   item: Item;
 }
@@ -33,14 +34,11 @@ interface Source {
   member: Member;
 }
 
-/**
- * Projects a session draws from: every project in the user's orgs, plus public, approved projects anywhere that
- * openPoolRole lets them into. Verified nonprofits first, then community orgs; oldest project first within each.
- */
+/** Projects a session draws from: every project in the user's orgs, plus public, approved projects anywhere that openPoolRole lets them into. */
 function sources(db: DB, user: UserRow, nonprofitsOnly: boolean): Source[] {
   const roles = new Map(all<{ org_id: number; role: Role }>(db, 'SELECT org_id, role FROM memberships WHERE user_id = ?', user.id).map((m) => [m.org_id, m.role]));
   // The visibility/moderation test here only narrows the scan; openPoolRole decides who gets in.
-  const projects = all<ProjectRow & { created_at: string }>(
+  const projects = all<ProjectRow>(
     db,
     `SELECT p.* FROM projects p
      WHERE p.org_id IN (SELECT org_id FROM memberships WHERE user_id = ?) OR (p.visibility = 'public' AND p.moderation = 'approved')
@@ -48,7 +46,7 @@ function sources(db: DB, user: UserRow, nonprofitsOnly: boolean): Source[] {
     user.id,
   );
   const orgs = new Map<number, OrgRow>();
-  const out: (Source & { rank: number })[] = [];
+  const out: Source[] = [];
   for (const project of projects) {
     const role = roles.get(project.org_id) ?? openPoolRole(db, user, project, 'translate');
     if (!role) continue;
@@ -56,62 +54,108 @@ function sources(db: DB, user: UserRow, nonprofitsOnly: boolean): Source[] {
     const org = orgs.get(project.org_id)!;
     if (nonprofitsOnly && !passesNonprofitsOnly(org)) continue;
     // The user as they act in this project's org: their role decides what they may review.
-    out.push({ project, org, member: { ...user, orgId: project.org_id, role }, rank: poolRank(org) });
+    out.push({ project, org, member: { ...user, orgId: project.org_id, role } });
   }
-  // Stable: keeps oldest-first within each rank.
-  return out.sort((a, b) => a.rank - b.rank);
+  return out;
 }
 
 const cardOrg = (org: OrgRow): CardOrg => ({ id: org.id, name: org.name, type: org.type, verified: isVerifiedNonprofit(org), description: org.description });
 
+/** Strings read per project, language and card type to score. Enough for the per-project cap plus slack. */
+const CANDIDATES_PER_GROUP = 6;
+/** At most this many cards from one project in a session, unless nothing else is left. */
+const MAX_PER_PROJECT = 2;
+
+/** A string a volunteer could get a card for, with its score (see pool/score.ts). */
+interface Scored {
+  s: Source;
+  type: Card['type'];
+  locale: string;
+  keyId: number;
+  urgent: boolean;
+  /** The first screenshot the string appears on; strings sharing one stay together. */
+  shot: number | null;
+  score: number;
+}
+
+const poolKey = (c: Pick<Scored, 'type' | 'keyId' | 'locale'>) => `${c.type}:${c.keyId}:${c.locale}`;
+
 /**
- * A short session of cards, in the user's languages, from their orgs' projects and the open pool. Urgent strings
- * come first, then verified nonprofits, then community orgs; within a project, queue() keeps strings that share
- * a screenshot together, oldest first. Translate and Review alternate (Translate first) while both last.
- * Review cards appear only where reviewRight allows.
+ * The strings a project offers in one language for one card type, longest-waiting first (urgent first): the ones
+ * queue() would deal. `shot` narrows them to one screenshot's strings.
  */
-export function buildSession(db: DB, user: UserRow, size: number, nonprofitsOnly = false): { cards: Card[]; empty: null | 'no_languages' | 'nothing_to_do' } {
+function candidates(db: DB, s: Source, locale: string, type: Card['type'], limit: number, now: number, shot?: number): Scored[] {
+  const review = type === 'review';
+  const filter = review ? reviewFilter(db, s.project, locale, s.member) : { sql: '', params: [] };
+  const rows = all<{ id: number; urgent: number; shot: number | null; since: string }>(
+    db,
+    `SELECT k.id, k.urgent, (SELECT MIN(screenshot_id) FROM screenshot_keys WHERE key_id = k.id) AS shot,
+            ${review ? 't.updated_at' : 'CASE WHEN t.status IS NULL THEN k.created_at ELSE COALESCE(k.source_changed_at, k.updated_at) END'} AS since
+     FROM keys k LEFT JOIN translations t ON t.key_id = k.id AND t.locale = ?
+     WHERE k.project_id = ? AND k.archived = 0 AND ${review ? `t.status = 'review' ${filter.sql}` : "(t.status IS NULL OR t.status = 'outdated')"}
+       ${shot == null ? '' : 'AND k.id IN (SELECT key_id FROM screenshot_keys WHERE screenshot_id = ?)'}
+     ORDER BY k.urgent DESC, since, k.id LIMIT ?`,
+    locale, s.project.id, ...filter.params, ...(shot == null ? [] : [shot]), limit,
+  );
+  return rows.map((r) => ({
+    s, type, locale, keyId: r.id, urgent: !!r.urgent, shot: r.shot,
+    score: score({ waitedHours: hoursSince(r.since, now), urgent: !!r.urgent, priority: s.project.priority, verifiedNonprofit: isVerifiedNonprofit(s.org) }),
+  }));
+}
+
+/**
+ * A short session of cards, in the user's languages, from their orgs' projects and the open pool. Each string is
+ * scored (pool/score.ts: how long it has waited, plus urgent, project priority and verified-nonprofit boosts) and the
+ * best come first, at most two per project unless nothing else is left. Translate and Review alternate (Translate
+ * first) while both last, but an urgent string is never held behind a non-urgent one. Strings that share a screenshot
+ * are dealt together. Review cards appear only where reviewRight allows.
+ */
+export function buildSession(db: DB, user: UserRow, size: number, nonprofitsOnly = false, now = Date.now()): { cards: Card[]; empty: null | 'no_languages' | 'nothing_to_do' } {
   const locales = JSON.parse(user.locales) as string[];
   if (!locales.length) return { cards: [], empty: 'no_languages' };
 
-  const piles: Record<Card['type'], Card[]> = { translate: [], review: [] };
-  const deal = (type: Card['type'], s: Source, locale: string, urgent: boolean, exclude: number[]) => {
-    if (piles[type].length >= size) return;
-    const { project, org, member } = s;
-    const { items } = queue(db, project, locale, type, { viewer: member, limit: size - piles[type].length, exclude });
-    for (const item of items) {
-      piles[type].push({ id: `${type}:${item.keyId}:${locale}`, type, project: { id: project.id, name: project.name, sourceLocale: project.source_locale }, org: cardOrg(org), locale, urgent, item });
-    }
-  };
-  const keyIds = (projectId: number, urgent: boolean) => all<{ id: number }>(db, 'SELECT id FROM keys WHERE project_id = ? AND archived = 0 AND urgent = ?', projectId, urgent ? 1 : 0).map((r) => r.id);
-
-  const work = sources(db, user, nonprofitsOnly).flatMap((s) => {
+  const open = new Map<string, Scored>();
+  const add = (list: Scored[]) => list.forEach((c) => open.set(poolKey(c), c));
+  for (const s of sources(db, user, nonprofitsOnly)) {
     const offered = projectLocales(db, s.project.id);
-    return locales.filter((l) => offered.includes(l)).map((locale) => ({ s, locale, review: !!reviewRight(db, s.project, s.member, locale) }));
-  });
-  // Two passes over the same order: urgent strings everywhere first (queue() offers only them when every other key
-  // is excluded), then the rest.
-  const urgentKeys = new Map(work.map(({ s }) => [s.project.id, keyIds(s.project.id, true)]));
-  for (const { s, locale, review } of work) {
-    if (!urgentKeys.get(s.project.id)!.length) continue;
-    const others = keyIds(s.project.id, false);
-    deal('translate', s, locale, true, others);
-    if (review) deal('review', s, locale, true, others);
-  }
-  for (const { s, locale, review } of work) {
-    const urgent = urgentKeys.get(s.project.id)!;
-    deal('translate', s, locale, false, urgent);
-    if (review) deal('review', s, locale, false, urgent);
-  }
-
-  const cards: Card[] = [];
-  for (const urgent of [true, false]) {
-    const t = piles.translate.filter((c) => c.urgent === urgent);
-    const r = piles.review.filter((c) => c.urgent === urgent);
-    for (let i = 0; cards.length < size && (t.length || r.length); i++) {
-      cards.push((i % 2 === 0 ? t.shift() ?? r.shift() : r.shift() ?? t.shift())!);
+    for (const locale of locales.filter((l) => offered.includes(l))) {
+      add(candidates(db, s, locale, 'translate', CANDIDATES_PER_GROUP, now));
+      if (reviewRight(db, s.project, s.member, locale)) add(candidates(db, s, locale, 'review', CANDIDATES_PER_GROUP, now));
     }
   }
+
+  const picked: Scored[] = [];
+  const dealt = new Set<string>();
+  const perProject = new Map<number, number>();
+  const used = (c: Scored) => perProject.get(c.s.project.id) ?? 0;
+  const best = (list: Scored[]) => list.reduce<Scored | undefined>((b, c) => (!b || c.score > b.score ? c : b), undefined);
+  while (picked.length < size && open.size) {
+    const all = [...open.values()];
+    // Variety first: projects under their cap; once none is left, anything goes.
+    const fresh = all.filter((c) => used(c) < MAX_PER_PROJECT);
+    const from = fresh.length ? fresh : all;
+    const want: Card['type'] = picked.length % 2 === 0 ? 'translate' : 'review';
+    const ofType = from.filter((c) => c.type === want);
+    // Keep a screenshot's strings together: prefer one that shares a screenshot with a card of this type already dealt.
+    const together = ofType.filter((c) => c.shot != null && picked.some((p) => p.type === c.type && p.s.project.id === c.s.project.id && p.shot === c.shot));
+    let pick = best(together) ?? best(ofType) ?? best(from)!;
+    const top = best(from)!;
+    if (top.urgent && !pick.urgent) pick = top;
+    open.delete(poolKey(pick));
+    dealt.add(poolKey(pick));
+    picked.push(pick);
+    perProject.set(pick.s.project.id, used(pick) + 1);
+    // Bring in the other strings on this screenshot, which the per-group scan may not have reached.
+    if (pick.shot != null && used(pick) < MAX_PER_PROJECT) {
+      add(candidates(db, pick.s, pick.locale, pick.type, MAX_PER_PROJECT + 1, now, pick.shot).filter((c) => !dealt.has(poolKey(c))));
+    }
+  }
+
+  const cards: Card[] = picked.map(({ s, type, locale, keyId, urgent }) => {
+    const { project, org, member } = s;
+    const [item] = queue(db, project, locale, type, { viewer: member, keyId }).items;
+    return { id: `${type}:${keyId}:${locale}`, type, project: { id: project.id, name: project.name, sourceLocale: project.source_locale }, org: cardOrg(org), locale, urgent, item };
+  });
   return { cards, empty: cards.length ? null : 'nothing_to_do' };
 }
 

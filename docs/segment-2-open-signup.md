@@ -104,13 +104,27 @@ Every public project starts `pending`.
 
 ### The open volunteer pool
 
-The Segment 1 session builder draws from **every public, approved project** plus private projects the user
-is a member of, in their languages, in this order:
+The session builder draws from **every public, approved project** plus private projects the user is a
+member of, in their languages. Each candidate string gets a **score in hours** and a session takes the
+highest scores:
 
-1. Urgent strings (Segment 4 adds the on-call side; the flag can exist now)
-2. Verified nonprofits
-3. Community orgs
-4. Within each: strings that share a screenshot together, oldest first
+> score = hours waited (capped at 30 days) + boosts
+
+- **Waited:** Translate cards count from when the key was created, or from when its source changed (it went
+  outdated). Review cards count from when the translation was submitted.
+- **Boosts:** urgent +720, project priority high +48 / normal 0 / low −24, verified nonprofit +24.
+
+So a community string that has waited a week beats a brand-new nonprofit string, and an urgent string comes
+first. Every weight lives in `apps/server/src/pool/score.ts`; new boosts (Segment 3's favorites and campaign
+deadlines) are added there.
+
+**Project priority** (`projects.priority`: `low`, `normal`, `high`) is set by org admins on the project's
+Sharing tab and by NativeLoc staff in the moderation console.
+
+Session rules: at most **2 cards per project** per session unless nothing else is left (so one project can't
+fill a session, and a new project reaches volunteers), Translate and Review alternate (Translate first), strings
+that share a screenshot stay together within that cap, and Review cards appear only where the volunteer may
+review.
 
 Cards show who you're helping: org name, type ("Nonprofit", "Community group", "Individual") and a one-line
 description. Volunteers can filter to "Nonprofits only".

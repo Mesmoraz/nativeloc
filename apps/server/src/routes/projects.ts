@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { actorOf, HttpError, projectAccess, randomToken, requireMember, requireUser, sha256 } from '../auth.js';
 import { all, get, run, tx, type DB, type KeyRow, type ProjectRow } from '../db.js';
 import { exportFile, importFile, manifest, progress, projectLocales, publish, reviewable, upsertEntries } from '../services.js';
+import { PRIORITIES } from '../pool/score.js';
 import { tierOf, type Tier } from '../trust.js';
 import { checkLocale, imageSize, intParam, readMultipart } from '../util.js';
 import { assertMayPost, defaultReviewMode, getOrg, rescreenAfterChange } from '../posting/policy.js';
@@ -50,6 +51,7 @@ function projectJson(db: DB, p: ProjectRow) {
     visibility: p.visibility,
     moderation: p.moderation,
     reviewMode: p.review_mode,
+    priority: p.priority,
     siteUrl: p.site_url,
     previewToken: p.preview_token,
     progress: progress(db, p.id) as (ReturnType<typeof progress>[number] & { reviewable?: number; tier?: Tier })[],
@@ -116,10 +118,11 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
     return { project: json, manifest: manifest(db, project) };
   });
 
-  app.patch<{ Params: { id: string }; Body: { name?: string; requireReview?: boolean; peerApprovals?: number; locales?: string[]; visibility?: string; reviewMode?: string; siteUrl?: string | null } }>('/api/v1/projects/:id', async (req) => {
+  app.patch<{ Params: { id: string }; Body: { name?: string; requireReview?: boolean; peerApprovals?: number; locales?: string[]; visibility?: string; reviewMode?: string; priority?: string; siteUrl?: string | null } }>('/api/v1/projects/:id', async (req) => {
     const { project } = projectAccess(db, req, intParam(req.params.id), 'admin');
     const visibility = pick(req.body?.visibility, VISIBILITY, 'Visibility');
     const reviewMode = pick(req.body?.reviewMode, REVIEW_MODES, 'Review mode');
+    const priority = pick(req.body?.priority, PRIORITIES, 'Priority');
     if (visibility === 'public') assertMayPost(db, project.org_id);
     tx(db, () => {
       if (visibility && visibility !== project.visibility) {
@@ -128,6 +131,7 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
         if (!reviewMode) run(db, 'UPDATE projects SET review_mode = ? WHERE id = ?', defaultReviewMode(getOrg(db, project.org_id), visibility), project.id);
       }
       if (reviewMode) run(db, 'UPDATE projects SET review_mode = ? WHERE id = ?', reviewMode, project.id);
+      if (priority) run(db, 'UPDATE projects SET priority = ? WHERE id = ?', priority, project.id);
       if (req.body?.name?.trim()) run(db, 'UPDATE projects SET name = ? WHERE id = ?', req.body.name.trim(), project.id);
       if (typeof req.body?.requireReview === 'boolean') run(db, 'UPDATE projects SET require_review = ? WHERE id = ?', req.body.requireReview ? 1 : 0, project.id);
       if (req.body?.peerApprovals !== undefined) {

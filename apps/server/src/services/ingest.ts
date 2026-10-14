@@ -64,7 +64,7 @@ export function upsertEntries(db: DB, project: ProjectRow, entries: SourceEntry[
       }
       run(
         db,
-        `UPDATE keys SET source = ?, prev_source = ?, description = ?, max_length = ?, meta = COALESCE(?, meta), archived = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        `UPDATE keys SET source = ?, prev_source = ?, description = ?, max_length = ?, meta = COALESCE(?, meta), archived = 0, updated_at = CURRENT_TIMESTAMP${changed ? ', source_changed_at = CURRENT_TIMESTAMP' : ''} WHERE id = ?`,
         e.source, changed ? existing.source : existing.prev_source, description, maxLength, meta, existing.id,
       );
       if (changed) run(db, "UPDATE translations SET status = 'outdated' WHERE key_id = ?", existing.id);

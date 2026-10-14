@@ -4,6 +4,7 @@ import { HttpError, projectAccess, requireStaff, requireUser } from '../auth.js'
 import { all, get, run, type OrgRow, type ProjectRow } from '../db.js';
 import { lookupEin, normalizeEin } from '../moderation/eobmf.js';
 import { fileReport, parseReport } from '../moderation/reports.js';
+import { PRIORITIES } from '../pool/score.js';
 import { checkOrg, decideVerification, latestVerification } from '../moderation/verify.js';
 import { intParam } from '../util.js';
 
@@ -59,6 +60,7 @@ export function staffRoutes(app: FastifyInstance, { db }: RouteDeps) {
             id: p.id,
             name: p.name,
             visibility: p.visibility,
+            priority: p.priority,
             strings: get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM keys WHERE project_id = ? AND archived = 0', p.id)!.n,
             submittedAt: screen?.created_at ?? null,
           },
@@ -91,6 +93,17 @@ export function staffRoutes(app: FastifyInstance, { db }: RouteDeps) {
     run(db, 'INSERT INTO moderation_decisions (project_id, decision, reason, staff_id) VALUES (?, ?, ?, ?)', project.id, decision, reason, user.id);
     run(db, 'UPDATE project_reports SET resolved_at = CURRENT_TIMESTAMP WHERE project_id = ? AND resolved_at IS NULL', project.id);
     return { project: { id: project.id, moderation } };
+  });
+
+  // Project priority is part of the card-order score (pool/score.ts). Org admins set it too, on the project.
+  app.put<{ Params: { projectId: string }; Body: { priority?: string } }>('/api/v1/staff/projects/:projectId/priority', async (req) => {
+    requireStaff(db, req);
+    const project = get<ProjectRow>(db, 'SELECT * FROM projects WHERE id = ?', intParam(req.params.projectId, 'project id'));
+    if (!project) throw new HttpError(404, 'Project not found.');
+    const priority = PRIORITIES.find((p) => p === req.body?.priority);
+    if (!priority) throw new HttpError(400, 'priority must be low, normal or high.');
+    run(db, 'UPDATE projects SET priority = ? WHERE id = ?', priority, project.id);
+    return { project: { id: project.id, priority } };
   });
 
   // ----- the poster's view of their project's moderation (extra; 2D can show it) -----

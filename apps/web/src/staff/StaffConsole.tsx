@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { TopBar } from '../App';
 import { api } from '../api';
-import type { ModerationDecision, ModerationQueueResponse, OrgType, VerificationDecision, VerificationQueueResponse } from '../contracts';
+import type { ModerationDecision, ProjectPriority, ModerationQueueResponse, OrgType, VerificationDecision, VerificationQueueResponse } from '../contracts';
 import './staff.css';
 
 const TYPE_LABEL: Record<OrgType, string> = { nonprofit: 'Nonprofit', individual: 'Individual', small_org: 'Community group', business: 'Business' };
@@ -71,6 +71,17 @@ function ProjectCard({ item, onDone }: { item: ModerationQueueResponse['projects
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   const { project, org } = item;
+  const [priority, setPriority] = useState<ProjectPriority>(project.priority);
+
+  async function setProjectPriority(next: ProjectPriority) {
+    setError('');
+    try {
+      await api(`/api/v1/staff/projects/${project.id}/priority`, { method: 'PUT', body: { priority: next } });
+      setPriority(next);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
 
   async function decide(body: ModerationDecision) {
     setError('');
@@ -112,6 +123,14 @@ function ProjectCard({ item, onDone }: { item: ModerationQueueResponse['projects
           <li key={i}>{s}</li>
         ))}
       </ul>
+      <label className="row small">
+        Priority in volunteers' cards
+        <select value={priority} onChange={(e) => void setProjectPriority(e.target.value as ProjectPriority)}>
+          <option value="low">Low</option>
+          <option value="normal">Normal</option>
+          <option value="high">High</option>
+        </select>
+      </label>
       <input placeholder="Reason (required to reject or ask for changes; the poster sees it)" aria-label="Reason" value={reason} onChange={(e) => setReason(e.target.value)} />
       {error && <div className="alert error">{error}</div>}
       <div className="row">

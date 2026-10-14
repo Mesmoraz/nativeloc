@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type Project } from '../api';
-import type { Moderation, ReviewMode, SubmitResponse, Visibility } from '../contracts';
+import type { Moderation, ProjectPriority, ReviewMode, SubmitResponse, Visibility } from '../contracts';
 import './posting.css';
 
 /** 2B's GET /api/v1/projects/:id/moderation: why a project is held or was sent back. */
@@ -31,7 +31,7 @@ export function Sharing({ project, reload }: { project: Project; reload: () => P
     api<ModerationInfo>(`/api/v1/projects/${project.id}/moderation`).then(setInfo, () => setInfo(null));
   }, [project.id, project.visibility, project.moderation]);
 
-  async function patch(body: { visibility?: Visibility; reviewMode?: ReviewMode }) {
+  async function patch(body: { visibility?: Visibility; reviewMode?: ReviewMode; priority?: ProjectPriority }) {
     setError('');
     setResult(null);
     try {
@@ -67,6 +67,7 @@ export function Sharing({ project, reload }: { project: Project; reload: () => P
           }}
         />
         {project.visibility === 'public' && <ReviewModeChoice value={project.reviewMode} onChange={(m) => void patch({ reviewMode: m })} />}
+        {project.visibility === 'public' && <PriorityChoice value={project.priority} onChange={(priority) => void patch({ priority })} />}
       </section>
 
       {project.visibility === 'public' && (
@@ -141,6 +142,29 @@ export function ReviewModeChoice({ value, onChange, recommended }: { value: Revi
       <button type="button" aria-pressed={value === 'standard'} onClick={() => onChange('standard')}>
         <b>Standard review{tag('standard')}</b>
         <span className="small muted">An experienced reviewer approves each translation. Best for verified nonprofits with their own reviewers.</span>
+      </button>
+    </fieldset>
+  );
+}
+
+export const PRIORITY_LABEL: Record<ProjectPriority, string> = { low: 'Low', normal: 'Normal', high: 'High' };
+
+/** How soon volunteers see this project's strings, compared with other public projects. */
+export function PriorityChoice({ value, onChange }: { value: ProjectPriority; onChange: (p: ProjectPriority) => void }) {
+  return (
+    <fieldset className="post-options">
+      <legend className="small">Priority</legend>
+      <button type="button" aria-pressed={value === 'high'} onClick={() => onChange('high')}>
+        <b>High</b>
+        <span className="small muted">Your strings come up sooner. Use it when you have a deadline.</span>
+      </button>
+      <button type="button" aria-pressed={value === 'normal'} onClick={() => onChange('normal')}>
+        <b>Normal</b>
+        <span className="small muted">Strings that have waited longest come first.</span>
+      </button>
+      <button type="button" aria-pressed={value === 'low'} onClick={() => onChange('low')}>
+        <b>Low</b>
+        <span className="small muted">Nothing is waiting on this. Other projects go first.</span>
       </button>
     </fieldset>
   );

@@ -29,6 +29,3 @@ export const isVerifiedNonprofit = (org: Pick<OrgRow, 'type' | 'verification'>) 
  * can't get into the filtered pool just by calling itself a nonprofit.
  */
 export const passesNonprofitsOnly = isVerifiedNonprofit;
-
-/** Session priority after urgent strings: verified nonprofits (0), then community orgs (1). */
-export const poolRank = (org: Pick<OrgRow, 'type' | 'verification'>) => (isVerifiedNonprofit(org) ? 0 : 1);

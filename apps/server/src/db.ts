@@ -462,6 +462,7 @@ export interface ProjectRow {
   visibility: 'private' | 'public';
   moderation: 'none' | 'pending' | 'approved' | 'rejected';
   review_mode: 'standard' | 'community';
+  priority: 'low' | 'normal' | 'high';
 }
 export interface KeyRow {
   id: number;

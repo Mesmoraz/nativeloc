@@ -118,8 +118,9 @@ So a community string that has waited a week beats a brand-new nonprofit string,
 first. Every weight lives in `apps/server/src/pool/score.ts`; new boosts (Segment 3's favorites and campaign
 deadlines) are added there.
 
-**Project priority** (`projects.priority`: `low`, `normal`, `high`) is set by org admins on the project's
-Sharing tab and by NativeLoc staff in the moderation console.
+**Project priority** (`projects.priority`: `low`, `normal`, `high`): org admins can set `low` or `normal` on the
+project's Sharing tab. Only NativeLoc staff set `high`, in the moderation console, for deadlines and urgent notices;
+if every org could pick it, the boost would mean nothing. Orgs can still lower what staff raised.
 
 Session rules: at most **2 cards per project** per session unless nothing else is left (so one project can't
 fill a session, and a new project reaches volunteers), Translate and Review alternate (Translate first), strings

@@ -195,18 +195,21 @@ describe('pool session score', () => {
     expect(await first('nl@pool.test', 2)).toEqual(['NlTwo', 'NlOne']);
   });
 
-  it('lets org admins and staff set a project priority', async () => {
+  it('lets org admins lower a project priority, and only staff raise it to high', async () => {
     const o = org('Pr Org');
     const p = project(o, 'PrProject', ['de']);
     await user('pradmin@pool.test', ['de'], {}, [o, 'admin']);
     const staff = await user('prstaff@pool.test', ['de']);
     run(db, 'UPDATE users SET is_staff = 1 WHERE id = ?', staff);
     const patch = (priority: string) => app.inject({ method: 'PATCH', url: `/api/v1/projects/${p}`, headers: as('pradmin@pool.test'), payload: { priority } });
-    expect((await patch('high')).json().project.priority).toBe('high');
+    expect((await patch('high')).statusCode).toBe(403);
+    expect((await patch('low')).json().project.priority).toBe('low');
     expect((await patch('urgent')).statusCode).toBe(400);
     const put = (email: string, priority: string) => app.inject({ method: 'PUT', url: `/api/v1/staff/projects/${p}/priority`, headers: as(email), payload: { priority } });
     expect((await put('pradmin@pool.test', 'low')).statusCode).toBe(403);
-    expect((await put('prstaff@pool.test', 'low')).json().project.priority).toBe('low');
-    expect((await app.inject({ url: `/api/v1/projects/${p}`, headers: as('pradmin@pool.test') })).json().project.priority).toBe('low');
+    expect((await put('prstaff@pool.test', 'high')).json().project.priority).toBe('high');
+    expect((await app.inject({ url: `/api/v1/projects/${p}`, headers: as('pradmin@pool.test') })).json().project.priority).toBe('high');
+    // The org can still lower what staff raised.
+    expect((await patch('normal')).json().project.priority).toBe('normal');
   });
 });

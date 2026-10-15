@@ -154,10 +154,12 @@ export function PriorityChoice({ value, onChange }: { value: ProjectPriority; on
   return (
     <fieldset className="post-options">
       <legend className="small">Priority</legend>
-      <button type="button" aria-pressed={value === 'high'} onClick={() => onChange('high')}>
-        <b>High</b>
-        <span className="small muted">Your strings come up sooner. Use it when you have a deadline.</span>
-      </button>
+      {value === 'high' && (
+        <button type="button" aria-pressed disabled>
+          <b>High</b>
+          <span className="small muted">Set by NativeLoc staff: your strings come up sooner.</span>
+        </button>
+      )}
       <button type="button" aria-pressed={value === 'normal'} onClick={() => onChange('normal')}>
         <b>Normal</b>
         <span className="small muted">Strings that have waited longest come first.</span>
@@ -166,6 +168,7 @@ export function PriorityChoice({ value, onChange }: { value: ProjectPriority; on
         <b>Low</b>
         <span className="small muted">Nothing is waiting on this. Other projects go first.</span>
       </button>
+      {value !== 'high' && <span className="small muted">Have a deadline or an urgent notice? Ask NativeLoc staff to set high priority.</span>}
     </fieldset>
   );
 }

@@ -119,10 +119,14 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
   });
 
   app.patch<{ Params: { id: string }; Body: { name?: string; requireReview?: boolean; peerApprovals?: number; locales?: string[]; visibility?: string; reviewMode?: string; priority?: string; siteUrl?: string | null } }>('/api/v1/projects/:id', async (req) => {
-    const { project } = projectAccess(db, req, intParam(req.params.id), 'admin');
+    const { project, actor } = projectAccess(db, req, intParam(req.params.id), 'admin');
     const visibility = pick(req.body?.visibility, VISIBILITY, 'Visibility');
     const reviewMode = pick(req.body?.reviewMode, REVIEW_MODES, 'Review mode');
     const priority = pick(req.body?.priority, PRIORITIES, 'Priority');
+    // Only staff raise a project to high, or every org would and the boost would mean nothing. Orgs can lower it.
+    if (priority === 'high' && !(actor.kind === 'user' && actor.user.is_staff)) {
+      throw new HttpError(403, 'High priority is set by NativeLoc staff. Contact us if you have a deadline or an urgent notice.');
+    }
     if (visibility === 'public') assertMayPost(db, project.org_id);
     tx(db, () => {
       if (visibility && visibility !== project.visibility) {

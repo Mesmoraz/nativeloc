@@ -1,4 +1,4 @@
-import { get, run, type DB, type OrgRow, type Verification } from '../db.js';
+import { get, getOrg, run, type DB, type OrgRow, type Verification } from '../db.js';
 import { eoNames, lookupEin, normalizeEin, type EoMatch } from './eobmf.js';
 
 /**
@@ -57,14 +57,12 @@ export const latestVerification = (db: DB, orgId: number) =>
   );
 
 /**
- * Owned by Segment 2 piece 2B (verification and moderation).
- *
- * 2A calls this after creating an org or changing its EIN, name or state. Nonprofits are looked up in the EO-BMF
+ * Called after creating an org or changing its EIN, name or state. Nonprofits are looked up in the EO-BMF
  * table: 'verified' on an EIN + name + state match, else 'pending' for the staff queue. Other org types keep
  * their verification. The org row is re-read, so callers can pass it from before their own UPDATE.
  */
 export function startVerification(db: DB, org: OrgRow): Verification {
-  const current = get<OrgRow>(db, 'SELECT id, name, type, verification, ein, website, description FROM orgs WHERE id = ?', org.id) ?? org;
+  const current = getOrg(db, org.id) ?? org;
   if (current.type !== 'nonprofit') return current.verification;
   const check = checkOrg(db, current);
   const decision: Verification = check.verified ? 'verified' : 'pending';

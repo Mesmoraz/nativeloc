@@ -50,7 +50,7 @@ const user = (email: string, name: string, password: string, role: Role, locales
   return id;
 };
 
-// The demo admin is also NativeLoc staff, so the staff console (2B) has someone to sign in as.
+// The demo admin is also NativeLoc staff, so the staff console has someone to sign in as.
 const admin = user('admin@demo.test', 'Avery Admin', 'demo-admin-pass', 'admin', []);
 run(db, 'UPDATE users SET is_staff = 1 WHERE id = ?', admin);
 const lucas = user('lucas@demo.test', 'Lucas Ortega', 'demo-reviewer-pass', 'reviewer', ['es', 'fr']);
@@ -217,9 +217,9 @@ submit('fr', {
   'pantry.call': 'Appeler',
 });
 
-// Demo data for the Segment 2 pieces, each in its own file (see docs/segment-2-contracts.md).
+// Demo data for each feature, from its own file in seed/.
 const demo: Demo = { orgId, users: { admin, lucas, maria, yuki, sam }, projects: { kiosk, scale, signage, pantry } };
-for (const seedPiece of [seedSignup, seedModeration, seedReview, seedPosting, seedPool]) seedPiece(db, demo);
+for (const seedFeature of [seedSignup, seedModeration, seedReview, seedPosting, seedPool]) seedFeature(db, demo);
 
 // Publish v1 of every project so devices have bundles to download immediately.
 for (const p of [kiosk, scale, signage, pantry]) publish(db, get<ProjectRow>(db, 'SELECT * FROM projects WHERE id = ?', p.id)!);

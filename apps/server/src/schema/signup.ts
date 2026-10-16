@@ -1,11 +1,11 @@
-import type { DB, PieceSchema } from '../db.js';
+import type { DB, FeatureSchema } from '../db.js';
 
 /**
- * Owned by Segment 2 piece 2A (sign-up and onboarding: email verification, outbox). Tables and columns this piece adds go here, never in db.ts.
+ * Sign-up and onboarding: email verification and the outbox.
  * Runs on every start after the core schema: use CREATE ... IF NOT EXISTS, and guard ALTERs with PRAGMA table_info.
  * Use db.exec / db.prepare directly (db.ts imports this file, so don't rely on its helpers at load time).
  */
-export const schema: PieceSchema = {
+export const schema: FeatureSchema = {
   sql: `
 -- One-time links sent by email (today only 'verify'). Only the hash is kept; the raw token is in the outbox body.
 CREATE TABLE IF NOT EXISTS email_tokens (

@@ -3,7 +3,7 @@ import { api, type Project } from '../api';
 import type { Moderation, ProjectPriority, ReviewMode, SubmitResponse, Visibility } from '../contracts';
 import './posting.css';
 
-/** 2B's GET /api/v1/projects/:id/moderation: why a project is held or was sent back. */
+/** GET /api/v1/projects/:id/moderation: why a project is held or was sent back. */
 interface ModerationInfo {
   moderation: Moderation;
   reasons: string[];

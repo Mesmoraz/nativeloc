@@ -1,11 +1,11 @@
-import type { DB, PieceSchema } from '../db.js';
+import type { DB, FeatureSchema } from '../db.js';
 
 /**
- * Owned by Segment 2 piece 2B (verification and moderation: IRS EO-BMF table, queues, reports). Tables and columns this piece adds go here, never in db.ts.
+ * Verification and moderation: the IRS EO-BMF table, screens, staff decisions and reports.
  * Runs on every start after the core schema: use CREATE ... IF NOT EXISTS, and guard ALTERs with PRAGMA table_info.
  * Use db.exec / db.prepare directly (db.ts imports this file, so don't rely on its helpers at load time).
  */
-export const schema: PieceSchema = {
+export const schema: FeatureSchema = {
   sql: `
 -- The IRS Exempt Organizations Business Master File, as imported by scripts/import-eo-bmf.ts. ein is 9 digits.
 CREATE TABLE IF NOT EXISTS eo_bmf (
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS project_reports (
 CREATE UNIQUE INDEX IF NOT EXISTS project_reports_open ON project_reports(project_id, user_id) WHERE resolved_at IS NULL;
 `,
   migrate(db: DB) {
-    // The state an org says it is registered in, for the EIN + name + state match. 2A's onboarding form sets it.
+    // The state an org says it is registered in, for the EIN + name + state match. The onboarding form sets it.
     const cols = db.prepare('PRAGMA table_info(orgs)').all() as { name: string }[];
     if (!cols.some((c) => c.name === 'state')) db.exec('ALTER TABLE orgs ADD COLUMN state TEXT');
   },

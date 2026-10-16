@@ -3,7 +3,7 @@ import { upsertEntries } from '../services.js';
 import type { Demo } from './types.js';
 
 /**
- * Owned by Segment 2 piece 2E. Demo data for the open volunteer pool. Runs once, after the core demo seed, before v1 is published.
+ * Demo data for the open volunteer pool. Runs once, after the core demo seed, before v1 is published.
  * Two orgs outside the demo team with public, approved work, so volunteers' sessions show who else they're helping.
  */
 export function seedPool(db: DB, _demo: Demo) {

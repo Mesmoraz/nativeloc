@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { actorOf, createSession, hashPassword, HttpError, membershipsOf, type UserActor, randomToken, requireMember, requireUser, SESSION_COOKIE, sha256, verifyPassword } from '../auth.js';
-import { addMembership, all, get, getUser, memberOf, ROLES, run, tx, USER_COLUMNS, type DB, type OrgRow, type Role, type UserRow } from '../db.js';
+import { addMembership, all, get, getOrg, getUser, memberOf, ROLES, run, tx, USER_COLUMNS, type DB, type OrgRow, type Role, type UserRow } from '../db.js';
 import { setTier, tierOf, tiersOf, TIERS, vouchFor, type Tier } from '../trust.js';
 import { checkLocale } from '../util.js';
 import { orgMayVouch } from '../signup/gate.js';
@@ -28,7 +28,7 @@ export function publicUser(db: DB, u: UserRow, orgId?: number | null) {
 
 /** GET /api/v1/me: the signed-in user, the org this sign-in works in (`org`, null when they have none) and all their orgs. */
 export function meResponse(db: DB, actor: UserActor) {
-  const orgs = actor.memberships.map((m) => ({ ...orgJson(get<OrgRow>(db, 'SELECT * FROM orgs WHERE id = ?', m.orgId)!), role: m.role }));
+  const orgs = actor.memberships.map((m) => ({ ...orgJson(getOrg(db, m.orgId)!), role: m.role }));
   return { user: publicUser(db, actor.user, actor.current?.orgId), org: orgs.find((o) => o.id === actor.current?.orgId) ?? null, orgs };
 }
 

@@ -16,9 +16,9 @@ export interface VolunteerClient {
   /** Throws ApiError 422 with `details.issues` when the text doesn't pass validation. */
   save(keyId: number, locale: string, text: string, approve: boolean): Promise<SaveResult>;
   approve(keyId: number, locale: string): Promise<ApproveResult>;
-  /** 2C: a Review card's third choice. Only call when settings().actions.flag. */
+  /** A Review card's third choice, on community-reviewed projects only (the card's `item.review` is set). */
   flag(keyId: number, locale: string, reason: FlagReason, note?: string): Promise<FlagResponse>;
-  /** 2B: report a project (and optionally the string). Only call when settings().actions.report. */
+  /** Report a project (and optionally the string) to NativeLoc staff. */
   report(projectId: number, keyId: number, reason: ReportReason, note?: string): Promise<ReportResponse>;
 }
 

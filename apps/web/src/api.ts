@@ -1,4 +1,4 @@
-import type { ProjectSharing, PublicUser, TranslationStatus } from './contracts';
+import type { CommunityReview, ProjectSharing, PublicUser, TranslationStatus } from './contracts';
 import type { EditorModel, Issue, LocaleProgressLike, Placeholder } from './types';
 
 export class ApiError extends Error {
@@ -63,6 +63,10 @@ export interface QueueItem {
   suggestions: { source: string; text: string; score: number }[];
   questions: { id: number; text: string; answer: string | null; user: string }[];
   approvals: { count: number; needed: number } | null;
+  /** Where the string stands in community review; null on standard-review projects. */
+  review: CommunityReview | null;
+  /** The poster's note when they sent community-reviewed text back; null otherwise. */
+  sentBack: string | null;
 }
 
 export interface QueueResponse {

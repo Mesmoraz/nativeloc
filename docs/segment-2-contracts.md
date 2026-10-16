@@ -1,5 +1,11 @@
 # Segment 2 contracts: what the parallel pieces build against
 
+> **Status: Segment 2 has merged.** §1 (the model), §3 (endpoints with example JSON) and §4 (the functions that
+> join the features) still describe the system and are kept current. §2 (rules for the pieces), §5 (file
+> ownership) and §6 (risks) recorded how the five pieces were built in parallel; they are history now, and nothing
+> is frozen. Still open from §6: risk 7 (drop `users.org_id`, `users.role` and their trigger in one migration) and
+> the email provider in risk 9 (the server logs emails to the console until one is picked).
+
 Step 2.0 of [segment-2-open-signup.md](segment-2-open-signup.md) is done: users belong to orgs through
 memberships, and the schema has everything §2 of the plan names. This file is the contract for the five pieces
 that now run in parallel (2A–2E): the model they share (§1), how to add things without touching another piece's

@@ -147,10 +147,6 @@ class DemoApp {
   delete(path: string, a: unknown, b?: unknown) {
     this.add('DELETE', path, a, b);
   }
-  hasRoute({ method, url }: { method: string; url: string }) {
-    const parts = split(url).join('/');
-    return this.routes.some((r) => r.method === method.toUpperCase() && r.parts.join('/') === parts);
-  }
   async register() {}
   addHook() {}
   setNotFoundHandler() {}

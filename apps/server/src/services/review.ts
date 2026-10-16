@@ -5,8 +5,7 @@ import { fileReport } from '../moderation/reports.js';
 import { tierOf } from '../trust.js';
 import { awardOf, onApprove, onCommunityReview, onCommunitySave, onSave, onVote, settleCommunity, type XpAward } from '../xp.js';
 
-// Owned by Segment 2 piece 2C (community review engine): who may review, saving, approving, votes, and the
-// adaptive 3–5 round community review (docs/segment-2-open-signup.md §2).
+// Who may review, saving, approving, votes, and the adaptive 3–5 round community review (docs/segment-2-open-signup.md §2).
 
 /**
  * How `user` (with their role in the project's org) may review `project` in `locale`: approve outright, cast

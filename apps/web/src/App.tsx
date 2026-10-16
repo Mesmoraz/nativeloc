@@ -87,7 +87,7 @@ export function App() {
         <Route path="/join/:code" element={<Join />} />
         {/* The dev mock (?mock=1) runs the card flow without signing in. */}
         {isMock && <Route path="/v" element={<VolunteerApp />} />}
-        {/* Segment 2 pieces add their pages here (each file is owned by one piece). */}
+        {/* Each feature folder lists its own pages. */}
         {signupRoutes(session)}
         {staffRoutes(session)}
         {communityRoutes(session)}

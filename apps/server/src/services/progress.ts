@@ -8,7 +8,7 @@ export interface LocaleProgress {
   locale: string;
   total: number;
   approved: number;
-  /** Agreed by community review, waiting for the poster to publish (Segment 2C). Not shipped yet. */
+  /** Agreed by community review, waiting for the poster to publish. Not shipped yet. */
   ready: number;
   review: number;
   outdated: number;

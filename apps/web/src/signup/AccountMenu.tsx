@@ -5,7 +5,7 @@ import { api } from '../api';
 import { ORG_TYPE_LABEL } from './shared';
 import './signup.css';
 
-/** Owned by Segment 2 piece 2A. The top bar's account menu: switch the current org, settings, staff console, sign out. */
+/** The top bar's account menu: switch the current org, settings, staff console, sign out. */
 export function AccountMenu(): React.ReactNode {
   const { session, refresh, logout } = useSession();
   const navigate = useNavigate();

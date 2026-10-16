@@ -3,12 +3,12 @@ import { basename, join } from 'node:path';
 import { ADAPTERS, detectFormat, displayKey, type SourceEntry } from '@nativeloc/core';
 import type { FastifyInstance } from 'fastify';
 import { actorOf, HttpError, projectAccess, randomToken, requireMember, requireUser, sha256 } from '../auth.js';
-import { all, get, run, tx, type DB, type KeyRow, type ProjectRow } from '../db.js';
+import { all, get, getOrg, run, tx, type DB, type KeyRow, type ProjectRow } from '../db.js';
 import { exportFile, importFile, manifest, progress, projectLocales, publish, reviewable, upsertEntries } from '../services.js';
 import { PRIORITIES } from '../pool/score.js';
 import { tierOf, type Tier } from '../trust.js';
 import { checkLocale, imageSize, intParam, readMultipart } from '../util.js';
-import { assertMayPost, defaultReviewMode, getOrg, rescreenAfterChange } from '../posting/policy.js';
+import { assertMayPost, defaultReviewMode, rescreenAfterChange } from '../posting/policy.js';
 
 const VISIBILITY = ['private', 'public'] as const;
 const REVIEW_MODES = ['standard', 'community'] as const;
@@ -72,7 +72,7 @@ export function projectRoutes(app: FastifyInstance, { db, screenshotDir }: Proje
   }));
 
   app.get('/api/v1/projects', async (req) => {
-    // The org this sign-in is working in. Someone with no org has no projects of their own (the open pool is 2E's).
+    // The org this sign-in is working in. Someone with no org has no projects of their own; they work through the open pool.
     const { current: user, locales } = requireUser(db, req);
     if (!user) return { projects: [] };
     const rows = all<ProjectRow>(db, 'SELECT * FROM projects WHERE org_id = ? ORDER BY name', user.orgId);

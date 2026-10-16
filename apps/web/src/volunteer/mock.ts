@@ -1,5 +1,5 @@
-// Dev-only stand-in for the volunteer API (open /v?mock=1). Implements the contract in types.ts closely enough
-// to build and test the card flow before the server piece lands: sessions alternate Translate and Review,
+// Dev-only stand-in for the volunteer API (open /v?mock=1), for working on the card flow without a server.
+// It follows the contract in types.ts closely enough to be useful: sessions alternate Translate and Review,
 // saves validate like the server (422 with `issues`), and every save or approval returns an `xp` award.
 import { listPlaceholders, pluralExamples, targetTemplate, toEditorModel, validateTranslation } from '@nativeloc/core';
 import { ApiError, type QueueItem } from '../api';
@@ -64,6 +64,9 @@ function item(
     suggestions: [],
     questions: [],
     approvals: opts.approvals ?? null,
+    // Review items without a peer-approval count stand in for community review, so the Flag button shows.
+    review: opts.current && !opts.approvals ? { reviews: 1, approvals: 1, flags: 0, needed: 3, escalated: false } : null,
+    sentBack: null,
   };
 }
 
@@ -106,7 +109,7 @@ const byKey = new Map<number, { project: typeof FOOD_BANK; item: QueueItem }>(
 );
 
 let sessions = 0;
-const settings: VolunteerSettings = { nonprofitsOnly: false, actions: { flag: true, report: true } };
+const settings: VolunteerSettings = { nonprofitsOnly: false };
 const stats: StatsResponse = {
   xp: { accepted: 140, pending: 20 },
   today: { accepted: 0, pending: 0 },

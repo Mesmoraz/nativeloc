@@ -3,8 +3,7 @@ import { all, get, type DB, type KeyRow, type Member, type ProjectRow, type Tran
 import { progress } from './progress.js';
 import { approvalCount, reviewFilter, reviewOf, sendBackNote } from './review.js';
 
-// Owned by Segment 2 piece 2C (community review engine): which strings a Translate or Review queue offers.
-// The volunteer session builder (2E) consumes queue() as is.
+// Which strings a Translate or Review queue offers. The full editor and the volunteer card sessions both use it.
 
 function similarity(a: string, b: string): number {
   if (a === b) return 1;
@@ -123,7 +122,7 @@ export function queue(
         ? k.t_status === 'review' ? { count: review.approvals, needed: review.needed } : null
         : k.t_status === 'review' && project.peer_approvals > 0 ? { count: approvalCount(db, k.id, locale), needed: project.peer_approvals } : null,
       review,
-      ...(community ? { sentBack: review ? sendBackNote(db, k.id, locale) : null } : {}),
+      sentBack: review ? sendBackNote(db, k.id, locale) : null,
     };
   });
   const p = progress(db, project.id).find((r) => r.locale === locale);

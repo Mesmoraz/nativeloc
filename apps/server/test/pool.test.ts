@@ -101,8 +101,7 @@ describe('pool sessions', () => {
     const only = (s: { cards: C[] }) => [...new Set(s.cards.map((c) => c.org.name))];
     expect(only(await session('vol@pool.test', '&nonprofitsOnly=1'))).toEqual(['Food Bank']);
     expect(only(await session('vol@pool.test'))).toEqual(['Food Bank']);
-    // With 2B and 2C merged, both card actions are offered.
-    expect((await app.inject({ url: '/api/v1/volunteer/settings', headers: as('vol@pool.test') })).json()).toMatchObject({ nonprofitsOnly: true, actions: { flag: true, report: true } });
+    expect((await app.inject({ url: '/api/v1/volunteer/settings', headers: as('vol@pool.test') })).json()).toEqual({ nonprofitsOnly: true });
     await app.inject({ method: 'PUT', url: '/api/v1/volunteer/settings', headers: as('vol@pool.test'), payload: { nonprofitsOnly: false } });
     expect(only(await session('vol@pool.test')).length).toBeGreaterThan(1);
   });
@@ -111,6 +110,19 @@ describe('pool sessions', () => {
     const reviews = (s: { cards: C[] }) => s.cards.filter((c) => c.type === 'review').map((c) => c.item.keyId);
     expect(reviews(await session('vol@pool.test'))).toEqual([ids.reviewKey]); // trusted, peer-review project
     expect(reviews(await session('newbie@pool.test'))).toEqual([]);
+  });
+
+  it("says on each Review card whether it's in community review, which is where the card offers Flag", async () => {
+    const author = await user('it-author@pool.test', ['it']);
+    await user('it-vol@pool.test', ['it'], { it: 'trusted' });
+    const standard = project(org('It Standard'), 'ItStandard', ['it'], 'public', 'approved', 1);
+    const community = project(org('It Community'), 'ItCommunity', ['it']);
+    run(db, "UPDATE projects SET review_mode = 'community' WHERE id = ?", community);
+    for (const p of [standard, community]) run(db, "INSERT INTO translations (key_id, locale, text, status, updated_by) VALUES (?, 'it', 'Testo', 'review', ?)", key(p, `it-${p}`), author);
+    const cards: (C & { item: { review: unknown } })[] = (await session('it-vol@pool.test')).cards.filter((c: C) => c.type === 'review');
+    const reviewOf = (name: string) => cards.find((c) => c.project.name === name)?.item.review;
+    expect(reviewOf('ItStandard')).toBeNull();
+    expect(reviewOf('ItCommunity')).toMatchObject({ reviews: 0, needed: 3 });
   });
 
   it("gives a requester-admin with no trust rows no Review cards, and won't let them approve public work", async () => {

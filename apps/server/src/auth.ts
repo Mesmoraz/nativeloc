@@ -121,7 +121,7 @@ export function projectAccess(db: DB, req: FastifyRequest, projectId: number, ac
     return { project, actor, member: null };
   }
 
-  // Members act with their role in the project's org. Anyone else gets in only if the open pool lets them (2E).
+  // Members act with their role in the project's org. Anyone else gets in only if the open pool lets them.
   const membership = memberOf(db, actor.user, project.org_id);
   const poolRole = membership ? null : openPoolRole(db, actor.user, project, access);
   const member: Member | null = membership ?? (poolRole ? { ...actor.user, orgId: project.org_id, role: poolRole } : null);

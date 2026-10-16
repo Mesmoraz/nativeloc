@@ -11,7 +11,7 @@ import { projectLocales } from '../services/progress.js';
 import { upsertEntries } from '../services/ingest.js';
 import { intParam } from '../util.js';
 
-/** Owned by Segment 2 piece 2D (posting content). Endpoints: docs/segment-2-contracts.md §2D. */
+/** Posting content: paste, website crawls, submit for moderation. Endpoints: docs/segment-2-contracts.md §3. */
 export function postingRoutes(app: FastifyInstance, { db }: RouteDeps) {
   const crawls = new CrawlRunner(db);
   crawls.start();
@@ -79,7 +79,7 @@ export function postingRoutes(app: FastifyInstance, { db }: RouteDeps) {
     return { jobs: jobsOf(db, project.id).map(crawlJobJson) };
   });
 
-  /** Submit a public project for moderation: 2B's automatic screen approves it or holds it for staff. */
+  /** Submit a public project for moderation: the automatic screen approves it or holds it for staff. */
   app.post<{ Params: { id: string } }>('/api/v1/projects/:id/submit', async (req) => {
     const { project } = projectAccess(db, req, intParam(req.params.id), 'admin');
     assertMayPost(db, project.org_id);

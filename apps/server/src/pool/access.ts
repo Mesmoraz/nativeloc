@@ -2,8 +2,6 @@ import type { Access } from '../auth.js';
 import type { DB, OrgRow, ProjectRow, UserRow } from '../db.js';
 import { projectLocales } from '../services/progress.js';
 
-// Owned by Segment 2 piece 2E (open volunteer pool).
-
 /** What the pool lets a non-member do: see the project and work on it. Never export, push or admin. */
 const POOL_ACCESS: Access[] = ['read', 'translate', 'review'];
 

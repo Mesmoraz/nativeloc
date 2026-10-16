@@ -6,7 +6,7 @@ import { VerifyEmail } from './VerifyEmail';
 import { Welcome } from './Welcome';
 
 /**
- * Owned by Segment 2 piece 2A (sign-up and onboarding: /signup, /verify-email, /welcome, /settings). App.tsx renders
+ * Sign-up and onboarding's pages (/signup, /verify-email, /welcome, /settings). App.tsx renders
  * these whether or not someone is signed in (`session` is null when signed out).
  */
 export function signupRoutes(session: MeResponse | null): React.ReactNode {

@@ -6,7 +6,7 @@ import { formLabel, isEmptyModel, LengthMeter, noGrammarly, sourceExample } from
 import { languageName, nativeLanguageName, textDirection } from '../types';
 import type { VolunteerClient } from './client';
 import type { CardOrg, FlagReason, ReportReason } from '../contracts';
-import type { Card, VolunteerSettings, XpAward } from './types';
+import type { Card, XpAward } from './types';
 
 export interface CardResult {
   outcome: 'done' | 'skipped';
@@ -17,8 +17,6 @@ interface CardProps {
   card: Card;
   client: VolunteerClient;
   onDone: (r: CardResult) => void;
-  /** Card actions this server offers (from /volunteer/settings); hidden until the other pieces' routes exist. */
-  actions: VolunteerSettings['actions'];
 }
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -108,7 +106,7 @@ function ReasonPicker<R extends string>({ title, reasons, busy, note, onPick, on
   );
 }
 
-/** "Report this project" (2B): spam, selling, or harmful. The card is skipped once the report is in. */
+/** "Report this project": spam, selling, or harmful. The card is skipped once the report is in. */
 function ReportLink({ card, client, onDone }: Pick<CardProps, 'card' | 'client' | 'onDone'>) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -359,7 +357,7 @@ function useTranslation(card: Card, client: VolunteerClient, onDone: (r: CardRes
   return { model, setModel, issues: serverIssues ?? live, note, saving, label: saved ? 'Saved ✓' : 'Saving…', submit };
 }
 
-export function TranslateCard({ card, client, onDone, actions }: CardProps) {
+export function TranslateCard({ card, client, onDone }: CardProps) {
   const t = useTranslation(card, client, onDone, false);
   useSubmitKey(() => void t.submit());
   return (
@@ -370,7 +368,7 @@ export function TranslateCard({ card, client, onDone, actions }: CardProps) {
         <SourceBlock item={card.item} source={card.project.sourceLocale} />
         <Context item={card.item} />
         <Editor item={card.item} source={card.project.sourceLocale} locale={card.locale} model={t.model} setModel={t.setModel} issues={t.issues} note={t.note} />
-        {actions.report && <ReportLink card={card} client={client} onDone={onDone} />}
+        <ReportLink card={card} client={client} onDone={onDone} />
       </div>
       <div className="v-actions">
         <button className="v-btn ghost" onClick={() => onDone({ outcome: 'skipped', xp: null })} disabled={t.saving}>
@@ -384,7 +382,7 @@ export function TranslateCard({ card, client, onDone, actions }: CardProps) {
   );
 }
 
-export function ReviewCard({ card, client, onDone, actions }: CardProps) {
+export function ReviewCard({ card, client, onDone }: CardProps) {
   const { item, locale } = card;
   const [improving, setImproving] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -471,7 +469,8 @@ export function ReviewCard({ card, client, onDone, actions }: CardProps) {
             <p className="small muted" dir="ltr" style={{ margin: 0 }}>
               Does it say the same thing, and read naturally? Approve it, or improve the wording.
             </p>
-            {actions.flag &&
+            {/* Flags are part of community review; standard-review projects have Improve and reviewers instead. */}
+            {item.review &&
               (flagging ? (
                 <ReasonPicker title="What's wrong with it?" reasons={FLAG_REASONS} busy={flagBusy} note="" onPick={(r) => void flag(r)} onCancel={() => setFlagging(false)} />
               ) : (
@@ -486,7 +485,7 @@ export function ReviewCard({ card, client, onDone, actions }: CardProps) {
             )}
           </section>
         )}
-        {actions.report && <ReportLink card={card} client={client} onDone={onDone} />}
+        <ReportLink card={card} client={client} onDone={onDone} />
       </div>
       <div className="v-actions">
         {improving ? (

@@ -1,17 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../app.js';
 import { HttpError, projectAccess, requireStaff, requireUser } from '../auth.js';
-import { all, get, run, type OrgRow, type ProjectRow } from '../db.js';
+import { all, get, getOrg, ORG_COLUMNS, run, type OrgRow, type ProjectRow } from '../db.js';
 import { lookupEin, normalizeEin } from '../moderation/eobmf.js';
 import { fileReport, parseReport } from '../moderation/reports.js';
 import { PRIORITIES } from '../pool/score.js';
 import { checkOrg, decideVerification, latestVerification } from '../moderation/verify.js';
 import { intParam } from '../util.js';
+import { orgJson } from './auth.js';
 
-const ORG_COLUMNS = 'id, name, type, verification, ein, website, description';
-const orgSummary = (o: OrgRow) => ({ id: o.id, name: o.name, type: o.type, verification: o.verification, website: o.website, description: o.description });
 
-/** Owned by Segment 2 piece 2B (verification and moderation). Endpoints: docs/segment-2-contracts.md §2B. */
+/** The staff console: nonprofit verification, moderation and reports. Endpoints: docs/segment-2-contracts.md §3. */
 export function staffRoutes(app: FastifyInstance, { db }: RouteDeps) {
   // ----- public EIN lookup (onboarding form) -----
   app.get<{ Params: { ein: string } }>('/api/v1/orgs/ein/:ein', async (req) => {
@@ -26,7 +25,7 @@ export function staffRoutes(app: FastifyInstance, { db }: RouteDeps) {
     const orgs = all<OrgRow & { created_at: string }>(db, `SELECT ${ORG_COLUMNS}, created_at FROM orgs WHERE verification = 'pending' ORDER BY created_at, id`);
     return {
       orgs: orgs.map((o) => ({
-        org: { ...orgSummary(o), ein: o.ein, createdAt: o.created_at },
+        org: { ...orgJson(o), ein: o.ein, createdAt: o.created_at },
         match: lookupEin(db, normalizeEin(o.ein ?? '')),
         admins: all<{ name: string; email: string }>(db, "SELECT u.name, u.email FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.org_id = ? AND m.role = 'admin' ORDER BY m.created_at", o.id),
         reason: latestVerification(db, o.id)?.note ?? checkOrg(db, o).reason,
@@ -36,12 +35,12 @@ export function staffRoutes(app: FastifyInstance, { db }: RouteDeps) {
 
   app.post<{ Params: { orgId: string }; Body: { decision?: string; note?: string } }>('/api/v1/staff/verifications/:orgId', async (req) => {
     const { user } = requireStaff(db, req);
-    const org = get<OrgRow>(db, `SELECT ${ORG_COLUMNS} FROM orgs WHERE id = ?`, intParam(req.params.orgId, 'org id'));
+    const org = getOrg(db, intParam(req.params.orgId, 'org id'));
     if (!org) throw new HttpError(404, 'Org not found.');
     const decision = req.body?.decision;
     if (decision !== 'verified' && decision !== 'rejected') throw new HttpError(400, 'decision must be verified or rejected.');
     decideVerification(db, org.id, user.id, decision, typeof req.body?.note === 'string' ? req.body.note.trim() || null : null);
-    return { org: orgSummary({ ...org, verification: decision }) };
+    return { org: orgJson({ ...org, verification: decision }) };
   });
 
   // ----- moderation queue -----
@@ -52,7 +51,7 @@ export function staffRoutes(app: FastifyInstance, { db }: RouteDeps) {
       projects: projects.map((p) => {
         const screen = get<{ reasons: string; created_at: string }>(db, 'SELECT reasons, created_at FROM moderation_screens WHERE project_id = ? ORDER BY id DESC LIMIT 1', p.id);
         const reports = all<{ reason: string; count: number }>(db, 'SELECT reason, COUNT(*) AS count FROM project_reports WHERE project_id = ? AND resolved_at IS NULL GROUP BY reason ORDER BY count DESC', p.id);
-        const org = get<OrgRow>(db, `SELECT ${ORG_COLUMNS} FROM orgs WHERE id = ?`, p.org_id)!;
+        const org = getOrg(db, p.org_id)!;
         const reasons: string[] = screen ? JSON.parse(screen.reasons) : [];
         if (reports.length && !reasons.includes('paused by volunteer reports')) reasons.push(`${reports.reduce((n, r) => n + r.count, 0)} open reports`);
         return {
@@ -64,7 +63,7 @@ export function staffRoutes(app: FastifyInstance, { db }: RouteDeps) {
             strings: get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM keys WHERE project_id = ? AND archived = 0', p.id)!.n,
             submittedAt: screen?.created_at ?? null,
           },
-          org: orgSummary(org),
+          org: orgJson(org),
           reasons,
           reports,
           // Reported strings first, then the first few.
@@ -106,7 +105,7 @@ export function staffRoutes(app: FastifyInstance, { db }: RouteDeps) {
     return { project: { id: project.id, priority } };
   });
 
-  // ----- the poster's view of their project's moderation (extra; 2D can show it) -----
+  // ----- the poster's view of their project's moderation (the Sharing tab) -----
   app.get<{ Params: { id: string } }>('/api/v1/projects/:id/moderation', async (req) => {
     const { project } = projectAccess(db, req, intParam(req.params.id), 'admin');
     const screen = get<{ reasons: string; created_at: string }>(db, 'SELECT reasons, created_at FROM moderation_screens WHERE project_id = ? ORDER BY id DESC LIMIT 1', project.id);

@@ -4,7 +4,7 @@ import { HttpError, projectAccess } from '../auth.js';
 import { publishReady, readyList, sendBack } from '../services/review.js';
 import { checkLocale, intParam } from '../util.js';
 
-/** Owned by Segment 2 piece 2C (community review engine). Endpoints: docs/segment-2-contracts.md §2C. */
+/** Community review: Flag, and the poster's "Ready to publish" list. Endpoints: docs/segment-2-contracts.md §3. */
 export function communityRoutes(app: FastifyInstance, { db }: RouteDeps) {
   /** The poster's "Ready to publish" list: text community review agreed on (org admins). */
   app.get<{ Params: { id: string }; Querystring: { locale?: string } }>('/api/v1/projects/:id/ready', async (req) => {

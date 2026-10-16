@@ -22,9 +22,8 @@ export function VolunteerApp() {
   const [pop, setPop] = useState<CardResult['xp'] | 'saved' | null>(null);
   const [error, setError] = useState('');
   const [starting, setStarting] = useState(false);
-  // No settings yet (or an older server): no filter, and no Flag or Report buttons.
+  // No settings yet: no filter.
   const [settings, setSettings] = useState<VolunteerSettings | null>(null);
-  const actions = settings?.actions ?? { flag: false, report: false };
 
   useEffect(() => {
     void volunteerClient().then(setClient);
@@ -111,9 +110,9 @@ export function VolunteerApp() {
       {screen.name === 'session' && client && (
         <main className="v-card" key={screen.cards[screen.index].id}>
           {screen.cards[screen.index].type === 'review' ? (
-            <ReviewCard card={screen.cards[screen.index]} client={client} onDone={onCardDone} actions={actions} />
+            <ReviewCard card={screen.cards[screen.index]} client={client} onDone={onCardDone} />
           ) : (
-            <TranslateCard card={screen.cards[screen.index]} client={client} onDone={onCardDone} actions={actions} />
+            <TranslateCard card={screen.cards[screen.index]} client={client} onDone={onCardDone} />
           )}
           {pop && <XpPop xp={pop} />}
         </main>

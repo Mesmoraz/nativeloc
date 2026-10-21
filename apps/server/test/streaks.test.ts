@@ -173,6 +173,11 @@ describe('recording activity', () => {
     await put('ana', k2, 'Adiós');
     expect((await approve('rev', k2)).statusCode).toBe(200);
     expect(activity(k2)).toContain(`rev review reviewer ${today()}`);
+
+    const k3 = key(staffed);
+    await put('ana', k3, 'Gracias');
+    expect((await app.inject({ method: 'POST', url: `/api/v1/translations/${k3}/es/reject`, headers: as('rev') })).statusCode).toBe(200);
+    expect(activity(k3)).toContain(`rev review reviewer ${today()}`);
   });
 
   it('records community votes, flags (counted or not) and outright approvals', async () => {

@@ -17,8 +17,9 @@ Where each piece lives, and what differed from the design below:
 - **Logic:** `apps/server/src/streaks.ts`. It has `validTimeZone`, `localDay`, `localMidnightUtc`,
   `recordActivity`, `streakOf`, `saveTimeZone` and `returnRates`, plus the goal presets and the freeze constants
   (`FREEZE_EVERY`, `MAX_FREEZES`).
-- **Recording:** six calls in `services/review.ts`, one per path in the table under Server. Each runs inside that
-  path's transaction.
+- **Recording:** six calls in `services/review.ts`, one per path in the table under Server, plus a reviewer's
+  send-back (`/reject` in `routes/localize.ts`), which the design's table missed. Each runs inside its path's
+  transaction.
 - **Endpoints:**
   - `stats()` in `xp.ts`
   - settings in `routes/volunteer.ts`

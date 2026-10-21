@@ -242,3 +242,47 @@ describe('stats', () => {
     expect((await stats('eve')).today).toEqual({ accepted: 0, pending: 10 });
   });
 });
+
+describe('settings and time zone', () => {
+  const settings = (who: string, payload?: unknown) =>
+    app.inject({ method: payload === undefined ? 'GET' : 'PUT', url: '/api/v1/volunteer/settings', headers: as(who), ...(payload === undefined ? {} : { payload: payload as object }) });
+  const setZone = (who: string | null, payload: unknown) =>
+    app.inject({ method: 'PUT', url: '/api/v1/me/time-zone', headers: who ? as(who) : {}, payload: payload as object });
+
+  beforeAll(async () => {
+    await user('fay', 'localizer', 'trusted');
+  });
+
+  it('has a daily goal that defaults to 5 and saves without touching the filter', async () => {
+    expect((await settings('fay')).json()).toEqual({ nonprofitsOnly: false, dailyGoal: 5 });
+    expect((await settings('fay', { dailyGoal: 10 })).json()).toEqual({ nonprofitsOnly: false, dailyGoal: 10 });
+    expect((await settings('fay', { nonprofitsOnly: true })).json()).toEqual({ nonprofitsOnly: true, dailyGoal: 10 });
+    const s = await app.inject({ url: '/api/v1/volunteer/stats', headers: as('fay') });
+    expect(s.json().goal.target).toBe(10);
+  });
+
+  it('refuses other goals and empty changes', async () => {
+    for (const body of [{}, { dailyGoal: 4 }, { dailyGoal: 'five' }, { nonprofitsOnly: 'maybe' }]) {
+      expect((await settings('fay', body)).statusCode).toBe(400);
+    }
+    expect((await settings('fay', { dailyGoal: 4 })).json().error).toBe('Daily goal must be 3, 5, 10 or 20.');
+  });
+
+  it('saves the time zone, and /me returns it', async () => {
+    expect((await app.inject({ url: '/api/v1/me', headers: as('fay') })).json().timeZone).toBeNull();
+    const res = await setZone('fay', { timeZone: 'Asia/Tokyo' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ timeZone: 'Asia/Tokyo' });
+    expect((await app.inject({ url: '/api/v1/me', headers: as('fay') })).json().timeZone).toBe('Asia/Tokyo');
+  });
+
+  it("only writes a zone that changed, and refuses ones it doesn't know", async () => {
+    run(db, "UPDATE volunteer_prefs SET updated_at = '2000-01-01 00:00:00' WHERE user_id = ?", ids.fay);
+    await setZone('fay', { timeZone: 'Asia/Tokyo' });
+    expect(get<{ u: string }>(db, 'SELECT updated_at AS u FROM volunteer_prefs WHERE user_id = ?', ids.fay)!.u).toBe('2000-01-01 00:00:00');
+    expect((await setZone('fay', { timeZone: 'Mars/Olympus' })).statusCode).toBe(400);
+    expect((await setZone('fay', { timeZone: 'Mars/Olympus' })).json().error).toBe("That isn't a time zone we know.");
+    expect((await setZone('fay', {})).statusCode).toBe(400);
+    expect((await setZone(null, { timeZone: 'Asia/Tokyo' })).statusCode).toBe(401);
+  });
+});

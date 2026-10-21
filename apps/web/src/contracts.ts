@@ -45,6 +45,8 @@ export interface MeResponse {
   org: OrgMembership | null;
   /** Every org the user belongs to, oldest membership first. */
   orgs: OrgMembership[];
+  /** The saved IANA time zone (PUT /me/time-zone); null until the browser has sent one. */
+  timeZone: string | null;
 }
 
 // ---------- projects ----------

@@ -2,18 +2,23 @@ import type { FastifyInstance } from 'fastify';
 import { HttpError, requireUser } from '../auth.js';
 import { get, run, type DB } from '../db.js';
 import { buildSession } from '../pool/session.js';
+import { DAILY_GOALS, dailyGoalOf, type DailyGoal } from '../streaks.js';
 import { stats } from '../xp.js';
 
 /** The user's saved "Nonprofits only" choice (off until they turn it on). */
 const nonprofitsOnlyPref = (db: DB, userId: number) =>
   !!get<{ v: number }>(db, 'SELECT nonprofits_only AS v FROM volunteer_prefs WHERE user_id = ?', userId)?.v;
 
-function saveNonprofitsOnly(db: DB, userId: number, on: boolean) {
+/** Saves the settings given; the others keep their saved (or default) values. */
+function savePrefs(db: DB, userId: number, prefs: { nonprofitsOnly?: boolean; dailyGoal?: DailyGoal }) {
+  const fields = { nonprofits_only: prefs.nonprofitsOnly === undefined ? undefined : prefs.nonprofitsOnly ? 1 : 0, daily_goal: prefs.dailyGoal };
+  const set = Object.entries(fields).filter(([, v]) => v !== undefined) as [string, number][];
+  if (!set.length) return;
   run(
     db,
-    `INSERT INTO volunteer_prefs (user_id, nonprofits_only) VALUES (?, ?)
-     ON CONFLICT (user_id) DO UPDATE SET nonprofits_only = excluded.nonprofits_only, updated_at = CURRENT_TIMESTAMP`,
-    userId, on ? 1 : 0,
+    `INSERT INTO volunteer_prefs (user_id, ${set.map(([c]) => c).join(', ')}) VALUES (?, ${set.map(() => '?').join(', ')})
+     ON CONFLICT (user_id) DO UPDATE SET ${set.map(([c]) => `${c} = excluded.${c}`).join(', ')}, updated_at = CURRENT_TIMESTAMP`,
+    userId, ...set.map(([, v]) => v),
   );
 }
 
@@ -30,7 +35,7 @@ export function volunteerRoutes(app: FastifyInstance, db: DB) {
     const size = Math.min(Math.max(Math.trunc(Number(req.query.size)) || 5, 1), 10);
     // Passing the filter saves it, so the next session (on any device) starts the same way.
     const asked = flag(req.query.nonprofitsOnly);
-    if (asked !== undefined) saveNonprofitsOnly(db, user.id, asked);
+    if (asked !== undefined) savePrefs(db, user.id, { nonprofitsOnly: asked });
     return buildSession(db, user, size, asked ?? nonprofitsOnlyPref(db, user.id));
   });
 
@@ -40,13 +45,18 @@ export function volunteerRoutes(app: FastifyInstance, db: DB) {
   });
 
   // The volunteer's card-session settings.
-  const settings = (userId: number) => ({ nonprofitsOnly: nonprofitsOnlyPref(db, userId) });
+  const settings = (userId: number) => ({ nonprofitsOnly: nonprofitsOnlyPref(db, userId), dailyGoal: dailyGoalOf(db, userId) });
   app.get('/api/v1/volunteer/settings', async (req) => settings(requireUser(db, req).user.id));
-  app.put<{ Body: { nonprofitsOnly?: unknown } }>('/api/v1/volunteer/settings', async (req) => {
+  // Either setting, or both; the other keeps its value.
+  app.put<{ Body: { nonprofitsOnly?: unknown; dailyGoal?: unknown } }>('/api/v1/volunteer/settings', async (req) => {
     const { user } = requireUser(db, req);
-    const on = flag(req.body?.nonprofitsOnly);
-    if (on === undefined) throw new HttpError(400, 'nonprofitsOnly must be true or false.');
-    saveNonprofitsOnly(db, user.id, on);
+    const body = req.body ?? {};
+    if (body.nonprofitsOnly === undefined && body.dailyGoal === undefined) throw new HttpError(400, 'Send nonprofitsOnly or dailyGoal.');
+    const on = body.nonprofitsOnly === undefined ? undefined : flag(body.nonprofitsOnly);
+    if (body.nonprofitsOnly !== undefined && on === undefined) throw new HttpError(400, 'nonprofitsOnly must be true or false.');
+    const goal = body.dailyGoal;
+    if (goal !== undefined && !DAILY_GOALS.includes(goal as DailyGoal)) throw new HttpError(400, 'Daily goal must be 3, 5, 10 or 20.');
+    savePrefs(db, user.id, { nonprofitsOnly: on, dailyGoal: goal as DailyGoal | undefined });
     return settings(user.id);
   });
 }

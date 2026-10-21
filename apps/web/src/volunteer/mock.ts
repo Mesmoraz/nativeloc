@@ -172,6 +172,13 @@ export const mockClient: VolunteerClient = {
     return structuredClone(settings);
   },
 
+  async setDailyGoal(goal) {
+    await wait(100);
+    settings.dailyGoal = goal;
+    stats.goal.target = goal;
+    return structuredClone(settings);
+  },
+
   async flag() {
     await wait();
     didCard();

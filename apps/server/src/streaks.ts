@@ -48,6 +48,17 @@ export const timeZoneOf = (db: DB, userId: number) => get<{ tz: string | null }>
 export const dailyGoalOf = (db: DB, userId: number) =>
   (get<{ g: DailyGoal }>(db, 'SELECT daily_goal AS g FROM volunteer_prefs WHERE user_id = ?', userId)?.g ?? DEFAULT_DAILY_GOAL) as DailyGoal;
 
+/** Saves the browser's zone, writing only when it changed. */
+export function saveTimeZone(db: DB, userId: number, tz: string) {
+  if (timeZoneOf(db, userId) === tz) return;
+  run(
+    db,
+    `INSERT INTO volunteer_prefs (user_id, time_zone) VALUES (?, ?)
+     ON CONFLICT (user_id) DO UPDATE SET time_zone = excluded.time_zone, updated_at = CURRENT_TIMESTAMP`,
+    userId, tz,
+  );
+}
+
 /** `user` saved or reviewed a string. Callers run it inside the transaction that made the change. */
 export function recordActivity(db: DB, user: Member, kind: 'translate' | 'review', s: { projectId: number; keyId: number; locale: string }, now = Date.now()) {
   run(

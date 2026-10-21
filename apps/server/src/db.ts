@@ -7,6 +7,7 @@ import { schema as poolSchema } from './schema/pool.js';
 import { schema as postingSchema } from './schema/posting.js';
 import { schema as reviewSchema } from './schema/review.js';
 import { schema as signupSchema } from './schema/signup.js';
+import { schema as streaksSchema } from './schema/streaks.js';
 
 // Loaded via require so bundlers/test runners that don't know `node:sqlite` leave it alone.
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
@@ -375,7 +376,7 @@ export interface FeatureSchema {
   sql?: string;
   migrate?: (db: DB) => void;
 }
-const FEATURE_SCHEMAS: FeatureSchema[] = [signupSchema, moderationSchema, reviewSchema, postingSchema, poolSchema];
+const FEATURE_SCHEMAS: FeatureSchema[] = [signupSchema, moderationSchema, reviewSchema, postingSchema, poolSchema, streaksSchema];
 
 type Param = string | number | bigint | null | Uint8Array;
 

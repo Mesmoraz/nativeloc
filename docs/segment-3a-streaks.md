@@ -32,7 +32,8 @@ day record built from `xp_events` would miss real activity, so this piece adds i
 **Assumptions** (stated during design, not corrected):
 - No real volunteers have used the app yet, so filling in existing days from `xp_events` in UTC only affects
   development and demo databases.
-- `localizer` (an org's own translator) counts as a volunteer for return rates.
+- `localizer` counts as a volunteer for return rates. This isn't optional: open-pool volunteers act as `localizer`
+  too (`openPoolRole` in `pool/access.ts`), so leaving localizers out would leave out every volunteer.
 - Things that aren't translation or review work (reports, settings, opening a session) never count.
 - Moderation that voids someone's work leaves their activity in place: they still showed up.
 - Meeting the goal earns no XP or badge. Only today's goal progress is tracked; past days don't record whether the
@@ -61,7 +62,7 @@ CREATE TABLE volunteer_activity (
   key_id     INTEGER NOT NULL,
   locale     TEXT NOT NULL,
   project_id INTEGER NOT NULL,
-  role       TEXT,                   -- role acted with: admin, reviewer, localizer; NULL = open pool
+  role       TEXT,                   -- role acted with: admin, reviewer, localizer; NULL = unknown (filled in from old XP)
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (user_id, day, kind, key_id, locale)
 );

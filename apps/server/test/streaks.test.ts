@@ -206,3 +206,39 @@ describe('recording activity', () => {
     }
   });
 });
+
+describe('stats', () => {
+  const stats = async (who: string) => (await app.inject({ url: '/api/v1/volunteer/stats', headers: as(who) })).json();
+  const addActivity = (who: string, day: string, keyId: number) =>
+    run(db, "INSERT INTO volunteer_activity (user_id, day, kind, key_id, locale, project_id, role) VALUES (?, ?, 'translate', ?, 'es', 0, 'localizer')", ids[who], day, keyId);
+
+  it('has the streak and the daily goal', async () => {
+    await user('dee', 'localizer', 'trusted');
+    const today = localDay(null);
+    days(7, addDays(today, -1)).forEach((d, i) => addActivity('dee', d, -1 - i));
+    const s = await stats('dee');
+    expect(s.streak).toEqual({ current: 7, freezes: 1, activeToday: false, lastFreezeUsed: null });
+    expect(s.goal).toEqual({ target: 5, done: 0 });
+
+    const p = project('standard');
+    await put('dee', key(p), 'Uno');
+    await put('dee', key(p), 'Dos');
+    const after = await stats('dee');
+    expect(after.streak).toMatchObject({ current: 8, activeToday: true });
+    expect(after.goal).toEqual({ target: 5, done: 2 });
+  });
+
+  it("counts today's XP from local midnight", async () => {
+    await user('eve', 'localizer', 'trusted');
+    // UTC-10 all year: local midnight is 10:00 UTC.
+    run(db, "INSERT INTO volunteer_prefs (user_id, time_zone) VALUES (?, 'Etc/GMT+10')", ids.eve);
+    const now = Date.now();
+    const midnight = Date.parse(`${localDay('Etc/GMT+10', now)}T10:00:00Z`);
+    const stamp = (t: number) => new Date(t).toISOString().slice(0, 19).replace('T', ' ');
+    const xp = (t: number, keyId: number) =>
+      run(db, "INSERT INTO xp_events (user_id, kind, key_id, locale, project_id, points, status, created_at) VALUES (?, 'translate', ?, 'es', 0, 10, 'pending', ?)", ids.eve, keyId, stamp(t));
+    xp(midnight - 60_000, -100);
+    xp(midnight + 60_000, -101);
+    expect((await stats('eve')).today).toEqual({ accepted: 0, pending: 10 });
+  });
+});

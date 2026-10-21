@@ -30,6 +30,7 @@ export interface SessionResponse {
 /** GET and PUT /api/v1/volunteer/settings. */
 export interface VolunteerSettings {
   nonprofitsOnly: boolean;
+  dailyGoal: DailyGoal;
 }
 
 export interface XpTotals {
@@ -47,6 +48,24 @@ export interface StatsResponse {
   approvedStrings: number;
   /** Distinct projects this volunteer has accepted work in. */
   projectsHelped: { id: number; name: string }[];
+  /** Days in a row with at least one card saved (pending counts), in the volunteer's time zone. */
+  streak: Streak;
+  /** Cards saved today (a string saved twice counts once) against the volunteer's goal. */
+  goal: { target: DailyGoal; done: number };
+}
+
+/** The daily goal choices, in cards. */
+export const DAILY_GOALS = [3, 5, 10, 20] as const;
+export type DailyGoal = (typeof DAILY_GOALS)[number];
+
+export interface Streak {
+  current: number;
+  /** A freeze covers a missed day. One is earned for every 7 active days in a streak, up to 2. */
+  freezes: number;
+  /** Today isn't a miss until it's over; this says whether it already counts. */
+  activeToday: boolean;
+  /** YYYY-MM-DD of the last day a freeze covered. */
+  lastFreezeUsed: string | null;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { get, run, type DB, type Member } from './db.js';
+import { all, get, run, type DB, type Member } from './db.js';
 
 /**
  * Streaks and the daily goal (docs/segment-3a-streaks.md). A day counts when the person saved a translation or a
@@ -77,7 +77,8 @@ export interface Streak {
   lastFreezeUsed: string | null;
 }
 
-const addDay = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+const addDay = (d: string) => addDays(d, 1);
 
 /**
  * Replays the active days from the first one. Each active day adds 1, and every FREEZE_EVERY of them in a streak
@@ -112,4 +113,47 @@ export function streakOf(days: string[], today: string): Streak {
   const activeToday = active.has(end);
   if (activeToday) current += 1;
   return { current, freezes, activeToday, lastFreezeUsed };
+}
+
+export interface ReturnWeek {
+  /** A Monday. */
+  start: string;
+  /** Volunteers with an active day this week. */
+  active: number;
+  /** Of those, how many were active the next week too. */
+  returned: number;
+  /** False while the next week is still running. */
+  complete: boolean;
+}
+
+/**
+ * Week-over-week return rates for staff (Segment 3's "done when"), for the `weeks` weeks before the current one.
+ * Weeks run Monday to Sunday on the stamped local days; "the current week" is the server's UTC week. Activity as an
+ * org admin or reviewer is left out: it's often their job, and would hide whether volunteers come back. Counts only.
+ */
+export function returnRates(db: DB, now = Date.now(), weeks = 8): { weeks: ReturnWeek[] } {
+  const today = new Date(now).toISOString().slice(0, 10);
+  const thisMonday = addDays(today, -((new Date(now).getUTCDay() + 6) % 7));
+  const first = addDays(thisMonday, -7 * weeks);
+  const rows = all<{ start: string; active: number; returned: number }>(
+    db,
+    `WITH w AS (
+       SELECT DISTINCT user_id, date(day, printf('-%d days', (CAST(strftime('%w', day) AS INTEGER) + 6) % 7)) AS wk
+       FROM volunteer_activity
+       WHERE day >= ? AND (role IS NULL OR role = 'localizer')
+     )
+     SELECT a.wk AS start, COUNT(*) AS active, COUNT(b.user_id) AS returned
+     FROM w a LEFT JOIN w b ON b.user_id = a.user_id AND b.wk = date(a.wk, '+7 days')
+     WHERE a.wk < ?
+     GROUP BY a.wk`,
+    first, thisMonday,
+  );
+  const byStart = new Map(rows.map((r) => [r.start, r]));
+  return {
+    weeks: Array.from({ length: weeks }, (_, i) => {
+      const start = addDays(first, 7 * i);
+      const r = byStart.get(start);
+      return { start, active: r?.active ?? 0, returned: r?.returned ?? 0, complete: i < weeks - 1 };
+    }),
+  };
 }

@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { hashPassword } from '../src/auth.js';
 import { addMembership, all, get, openDb, run, type DB, type Role } from '../src/db.js';
-import { localDay, streakOf, validTimeZone } from '../src/streaks.js';
+import { localDay, returnRates, streakOf, validTimeZone } from '../src/streaks.js';
 
 let app: FastifyInstance;
 let db: DB;
@@ -284,5 +284,49 @@ describe('settings and time zone', () => {
     expect((await setZone('fay', { timeZone: 'Mars/Olympus' })).json().error).toBe("That isn't a time zone we know.");
     expect((await setZone('fay', {})).statusCode).toBe(400);
     expect((await setZone(null, { timeZone: 'Asia/Tokyo' })).statusCode).toBe(401);
+  });
+});
+
+describe('return rates', () => {
+  // A Wednesday well before the other tests' activity (which is on the real today).
+  const NOW = Date.parse('2025-01-15T12:00:00Z');
+  const W = { m3: '2024-12-23', m2: '2024-12-30', m1: '2025-01-06', now: '2025-01-13' };
+  const act = (who: string, day: string, role: string | null = 'localizer') =>
+    run(db, "INSERT OR IGNORE INTO volunteer_activity (user_id, day, kind, key_id, locale, project_id, role) VALUES (?, ?, 'review', 1, 'es', 0, ?)", ids[who], day, role);
+
+  beforeAll(async () => {
+    for (const name of ['ra', 'rb', 'rc', 'rnull']) await user(name, 'localizer', 'trusted');
+    await user('radm', 'admin');
+    await user('rrev', 'reviewer');
+    run(db, 'UPDATE users SET is_staff = 1 WHERE id = ?', ids.radm);
+    act('ra', addDays(W.m3, 2));
+    act('ra', addDays(W.m2, 6)); // Sunday: still week -2
+    act('rb', addDays(W.m3, 4));
+    act('rc', W.m1);
+    act('rc', addDays(W.now, 1));
+    act('rnull', addDays(W.m2, 1), null);
+    for (const w of Object.values(W)) {
+      act('radm', addDays(w, 1), 'admin');
+      act('rrev', addDays(w, 1), 'reviewer');
+    }
+  });
+
+  it('counts who came back the next week, leaving out org admins and reviewers', () => {
+    const { weeks } = returnRates(db, NOW);
+    expect(weeks).toHaveLength(8);
+    expect(weeks[0].start).toBe('2024-11-18');
+    expect(weeks.slice(-3)).toEqual([
+      { start: W.m3, active: 2, returned: 1, complete: true },
+      { start: W.m2, active: 2, returned: 0, complete: true },
+      { start: W.m1, active: 1, returned: 1, complete: false },
+    ]);
+    expect(weeks.slice(0, 5).every((w) => w.active === 0 && w.returned === 0 && w.complete)).toBe(true);
+  });
+
+  it('is for staff only', async () => {
+    expect((await app.inject({ url: '/api/v1/staff/engagement', headers: as('ra') })).statusCode).toBe(403);
+    const res = await app.inject({ url: '/api/v1/staff/engagement', headers: as('radm') });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().weeks).toHaveLength(8);
   });
 });

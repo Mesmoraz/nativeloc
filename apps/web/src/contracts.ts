@@ -116,6 +116,13 @@ export interface VerificationDecision {
   note?: string;
 }
 export type ReportReason = 'spam' | 'commercial' | 'harmful';
+/**
+ * GET /api/v1/staff/engagement: week-over-week volunteer return rates, oldest week first. Activity as an org admin
+ * or reviewer is left out. The last week is incomplete: the week it's measured against is still running.
+ */
+export interface EngagementResponse {
+  weeks: { start: string; active: number; returned: number; complete: boolean }[];
+}
 /** GET /api/v1/staff/moderation: projects with moderation 'pending' (screened out, or paused by reports). */
 export interface ModerationQueueResponse {
   projects: {

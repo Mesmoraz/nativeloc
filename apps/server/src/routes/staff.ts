@@ -6,6 +6,7 @@ import { lookupEin, normalizeEin } from '../moderation/eobmf.js';
 import { fileReport, parseReport } from '../moderation/reports.js';
 import { PRIORITIES } from '../pool/score.js';
 import { checkOrg, decideVerification, latestVerification } from '../moderation/verify.js';
+import { returnRates } from '../streaks.js';
 import { intParam } from '../util.js';
 import { orgJson } from './auth.js';
 
@@ -17,6 +18,12 @@ export function staffRoutes(app: FastifyInstance, { db }: RouteDeps) {
     const ein = normalizeEin(req.params.ein);
     if (!ein) throw new HttpError(400, 'An EIN is 9 digits, like 12-3456789.');
     return { match: lookupEin(db, ein) };
+  });
+
+  // ----- volunteer return rates (streaks.ts) -----
+  app.get('/api/v1/staff/engagement', async (req) => {
+    requireStaff(db, req);
+    return returnRates(db);
   });
 
   // ----- verification queue -----

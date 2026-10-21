@@ -116,6 +116,22 @@
 .v-stat-num { font-size: 1.8rem; font-weight: 800; line-height: 1.2; }
 .v-explain { margin: 0; }
 
+/* Streak and daily goal (segment-3a-streaks.md) */
+.v-streak { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow); }
+.v-streak-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.v-streak-count { font-weight: 800; font-size: 1.15rem; }
+.v-freezes { font-weight: 700; white-space: nowrap; cursor: help; }
+.v-streak-note { margin: 0; }
+.v-goal { display: flex; flex-direction: column; gap: 4px; }
+.v-goal-bar { height: 10px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.v-goal-bar span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width 0.3s ease; }
+@media (prefers-reduced-motion: reduce) { .v-goal-bar span { transition: none; } }
+.v-goal-picker { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); flex-wrap: wrap; }
+.v-seg { display: flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.v-seg button { border: 0; background: transparent; padding: 8px 14px; min-width: 44px; font: inherit; font-weight: 700; cursor: pointer; color: inherit; }
+.v-seg button + button { border-left: 1px solid var(--border); }
+.v-seg button.on { background: var(--accent); color: var(--accent-ink); }
+
 .v-xp { display: inline-flex; align-items: baseline; gap: 4px; font-weight: 800; }
 .v-xp.big { font-size: 1.8rem; line-height: 1.2; }
 .v-xp-accepted { color: var(--accent); }

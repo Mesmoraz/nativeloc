@@ -59,12 +59,29 @@ export function TopBar({ children }: { children?: React.ReactNode }) {
   );
 }
 
+/**
+ * Saves this browser's time zone when it differs from the saved one, so streak days are the volunteer's own.
+ * Done before the app renders, so the first stats already use it. A failure is ignored; the next load tries again.
+ */
+async function syncTimeZone(me: Session) {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (!timeZone || timeZone === me.timeZone) return;
+  try {
+    await api('/api/v1/me/time-zone', { method: 'PUT', body: { timeZone } });
+    me.timeZone = timeZone;
+  } catch {
+    // Unknown to the server (or offline): days stay on the saved zone, or UTC.
+  }
+}
+
 export function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
 
   const refresh = useCallback(async () => {
     try {
-      setSession(await api<Session>('/api/v1/me'));
+      const me = await api<Session>('/api/v1/me');
+      await syncTimeZone(me);
+      setSession(me);
     } catch {
       setSession(null);
     }

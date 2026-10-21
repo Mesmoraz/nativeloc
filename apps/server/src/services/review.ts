@@ -2,6 +2,7 @@ import { displayKey, validateTranslation, type Issue } from '@nativeloc/core';
 import { HttpError } from '../auth.js';
 import { all, get, run, tx, type DB, type KeyRow, type Member, type ProjectRow, type TranslationRow } from '../db.js';
 import { fileReport } from '../moderation/reports.js';
+import { recordActivity } from '../streaks.js';
 import { tierOf } from '../trust.js';
 import { awardOf, onApprove, onCommunityReview, onCommunitySave, onSave, onVote, settleCommunity, type XpAward } from '../xp.js';
 
@@ -151,6 +152,7 @@ function communityVote(db: DB, project: ProjectRow, user: Member, t: Translation
       status = 'ready';
       if (xp) xp = awardOf(db, user.id, 'review', s);
     }
+    recordActivity(db, user, 'review', s);
     const review = reviewOf(db, t.key_id, t.locale);
     return { status, review, approvals: { count: review.approvals, needed: review.needed }, xp };
   });
@@ -173,6 +175,7 @@ export function flagTranslation(db: DB, project: ProjectRow, user: Member, keyId
     // uncounted flags (meaning, grammar, tone) are kept for the poster but shouldn't count toward pausing a project.
     if (!counts && reason === 'offensive') fileReport(db, user.id, project, { keyId, reason: 'harmful', note: `Flagged as offensive (${locale})${note?.trim() ? `: ${note.trim()}` : ''}` });
     const xp = counts ? onCommunityReview(db, user.id, s) : null;
+    recordActivity(db, user, 'review', s);
     return { status: 'review' as const, review: reviewOf(db, keyId, locale), xp };
   });
 }
@@ -213,6 +216,7 @@ export function saveTranslation(db: DB, project: ProjectRow, user: Member, keyId
     if (status === 'approved' && approve && canApprove) recordApprover(db, keyId, locale, user.id);
     const s = ref(project, keyId, locale);
     const xp = community ? onCommunitySave(db, user.id, s, status, text) : onSave(db, user.id, s, status);
+    recordActivity(db, user, 'translate', s);
     return { status, issues, xp, ...(community ? { review: reviewOf(db, keyId, locale) } : {}) };
   });
 }
@@ -235,6 +239,7 @@ export function approveTranslation(db: DB, project: ProjectRow, user: Member, ke
       run(db, "UPDATE translations SET status = 'approved', updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE key_id = ? AND locale = ?", user.id, keyId, locale);
       recordApprover(db, keyId, locale, user.id);
       settleCommunity(db, s, t.text);
+      recordActivity(db, user, 'review', s);
       return { status: 'approved' as const, review: reviewOf(db, keyId, locale), xp: null };
     });
   }
@@ -245,6 +250,7 @@ export function approveTranslation(db: DB, project: ProjectRow, user: Member, ke
       recordApprover(db, keyId, locale, user.id);
       // Reviewing is staff's job, so no XP for them. A volunteer lead's review of someone else's work earns XP.
       const xp = onApprove(db, user.id, s, user.role === 'localizer' && t.status === 'review' && t.updated_by !== user.id);
+      recordActivity(db, user, 'review', s);
       return { status: 'approved' as const, xp };
     });
   }
@@ -258,6 +264,7 @@ export function approveTranslation(db: DB, project: ProjectRow, user: Member, ke
     if (status === 'approved') run(db, "UPDATE translations SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE key_id = ? AND locale = ?", keyId, locale);
     // Approving twice is one vote, and earns once.
     const xp = voted ? onVote(db, user.id, s, status === 'approved') : null;
+    recordActivity(db, user, 'review', s);
     return { status, approvals: { count, needed: project.peer_approvals }, xp };
   });
 }

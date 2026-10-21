@@ -5,22 +5,57 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { hashPassword } from '../src/auth.js';
-import { all, get, openDb, run, type DB } from '../src/db.js';
+import { addMembership, all, get, openDb, run, type DB, type Role } from '../src/db.js';
 import { localDay, streakOf, validTimeZone } from '../src/streaks.js';
 
 let app: FastifyInstance;
 let db: DB;
 let dir: string;
+let org: number;
+const cookies: Record<string, string> = {};
+const ids: Record<string, number> = {};
+const pw = hashPassword('pw-12345678');
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'nativeloc-'));
   ({ app, db } = await buildApp({ dbPath: ':memory:', dataDir: dir }));
+  org = Number(run(db, "INSERT INTO orgs (name) VALUES ('Streaks')").lastInsertRowid);
 });
 
 afterAll(async () => {
   await app.close();
   rmSync(dir, { recursive: true, force: true });
 });
+
+/** A user with a membership in the test org; `tier` writes their es tier. */
+async function user(name: string, role: Role, tier?: 'new' | 'trusted' | 'lead') {
+  const email = `${name}@st.test`;
+  const id = Number(run(db, 'INSERT INTO users (email, name, password_hash, locales) VALUES (?, ?, ?, ?)', email, name, pw, '["es"]').lastInsertRowid);
+  addMembership(db, id, org, role);
+  if (tier) run(db, "INSERT INTO user_languages (user_id, locale, tier, reason) VALUES (?, 'es', ?, 'test')", id, tier);
+  const res = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { email, password: 'pw-12345678' } });
+  expect(res.statusCode).toBe(200);
+  cookies[name] = `nl_sid=${res.cookies.find((x) => x.name === 'nl_sid')!.value}`;
+  ids[name] = id;
+  return id;
+}
+const as = (name: string) => ({ cookie: cookies[name] });
+let n = 0;
+function project(mode: 'standard' | 'community', peerApprovals = 0) {
+  const id = Number(
+    run(db, "INSERT INTO projects (org_id, name, source_locale, bundle_token, peer_approvals, review_mode) VALUES (?, ?, 'en', ?, ?, ?)", org, `p${++n}`, `st_${n}`, peerApprovals, mode).lastInsertRowid,
+  );
+  run(db, "INSERT INTO project_locales (project_id, locale) VALUES (?, 'es')", id);
+  return id;
+}
+const key = (projectId: number) => Number(run(db, 'INSERT INTO keys (project_id, name, source) VALUES (?, ?, ?)', projectId, `k${++n}`, `Source ${n}`).lastInsertRowid);
+const put = (who: string, keyId: number, text: string, approve = false) =>
+  app.inject({ method: 'PUT', url: `/api/v1/translations/${keyId}/es`, headers: as(who), payload: { text, approve } });
+const approve = (who: string, keyId: number) => app.inject({ method: 'POST', url: `/api/v1/translations/${keyId}/es/approve`, headers: as(who) });
+const flag = (who: string, keyId: number, reason = 'meaning') => app.inject({ method: 'POST', url: `/api/v1/translations/${keyId}/es/flag`, headers: as(who), payload: { reason } });
+/** Activity on one string, as "who kind role day". */
+const activity = (keyId: number) =>
+  all<{ e: string }>(db, "SELECT u.name || ' ' || a.kind || ' ' || COALESCE(a.role, '-') || ' ' || a.day AS e FROM volunteer_activity a JOIN users u ON u.id = a.user_id WHERE a.key_id = ? ORDER BY a.created_at, u.name, a.kind", keyId).map((r) => r.e);
 
 const DAY = 86_400_000;
 const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
@@ -108,5 +143,66 @@ describe('streakOf', () => {
   });
   it('handles a recorded day after today (flying west)', () => {
     expect(s([...days(3, T), addDays(T, 1)])).toMatchObject({ current: 4, freezes: 0, activeToday: true });
+  });
+});
+
+describe('recording activity', () => {
+  const today = () => localDay(null);
+
+  beforeAll(async () => {
+    await user('ana', 'localizer', 'trusted');
+    await user('ben', 'localizer', 'trusted');
+    await user('cy', 'localizer', 'trusted');
+    await user('rev', 'reviewer');
+    await user('adm', 'admin');
+    await user('newbie', 'localizer', 'new');
+  });
+
+  it('records saves once per card per day, and peer votes and outright approvals as reviews', async () => {
+    const peer = project('standard', 2);
+    const k = key(peer);
+    expect((await put('ana', k, 'Hola')).statusCode).toBe(200);
+    expect((await put('ana', k, 'Hola!')).statusCode).toBe(200);
+    expect(activity(k)).toEqual([`ana translate localizer ${today()}`]);
+    expect((await approve('ben', k)).statusCode).toBe(200);
+    expect((await approve('ben', k)).statusCode).toBe(200);
+    expect(activity(k)).toEqual([`ana translate localizer ${today()}`, `ben review localizer ${today()}`]);
+
+    const staffed = project('standard');
+    const k2 = key(staffed);
+    await put('ana', k2, 'Adiós');
+    expect((await approve('rev', k2)).statusCode).toBe(200);
+    expect(activity(k2)).toContain(`rev review reviewer ${today()}`);
+  });
+
+  it('records community votes, flags (counted or not) and outright approvals', async () => {
+    const c = project('community');
+    const k = key(c);
+    await put('ana', k, 'Hola');
+    expect((await approve('ben', k)).statusCode).toBe(200);
+    expect((await flag('cy', k)).statusCode).toBe(200);
+    expect((await flag('newbie', k, 'tone')).statusCode).toBe(200);
+    expect((await approve('adm', k)).statusCode).toBe(200);
+    expect(activity(k).sort()).toEqual(
+      [`adm review admin ${today()}`, `ana translate localizer ${today()}`, `ben review localizer ${today()}`, `cy review localizer ${today()}`, `newbie review localizer ${today()}`].sort(),
+    );
+  });
+
+  it('records nothing for a refused action', async () => {
+    const peer = project('standard', 2);
+    const k = key(peer);
+    await put('ana', k, 'Hola');
+    expect((await approve('ana', k)).statusCode).toBe(403);
+    expect(activity(k)).toEqual([`ana translate localizer ${today()}`]);
+  });
+
+  it("stamps the day in the person's time zone", async () => {
+    // UTC+14 and UTC-11 are never both on UTC's date, so one of them always shows the zone is used.
+    for (const tz of ['Pacific/Kiritimati', 'Pacific/Pago_Pago']) {
+      run(db, 'INSERT INTO volunteer_prefs (user_id, time_zone) VALUES (?, ?) ON CONFLICT (user_id) DO UPDATE SET time_zone = excluded.time_zone', ids.cy, tz);
+      const k = key(project('standard'));
+      await put('cy', k, 'Hola');
+      expect(activity(k)).toEqual([`cy translate localizer ${localDay(tz)}`]);
+    }
   });
 });

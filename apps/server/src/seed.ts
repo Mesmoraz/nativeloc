@@ -24,6 +24,7 @@ import { seedPool } from './seed/pool.js';
 import { seedPosting } from './seed/posting.js';
 import { seedReview } from './seed/review.js';
 import { seedSignup } from './seed/signup.js';
+import { seedStreaks } from './seed/streaks.js';
 import type { Demo } from './seed/types.js';
 import { importFile, publish, saveTranslation, upsertEntries } from './services.js';
 
@@ -219,7 +220,8 @@ submit('fr', {
 
 // Demo data for each feature, from its own file in seed/.
 const demo: Demo = { orgId, users: { admin, lucas, maria, yuki, sam }, projects: { kiosk, scale, signage, pantry } };
-for (const seedFeature of [seedSignup, seedModeration, seedReview, seedPosting, seedPool]) seedFeature(db, demo);
+// Streaks run last: they build on the activity the others recorded.
+for (const seedFeature of [seedSignup, seedModeration, seedReview, seedPosting, seedPool, seedStreaks]) seedFeature(db, demo);
 
 // Publish v1 of every project so devices have bundles to download immediately.
 for (const p of [kiosk, scale, signage, pantry]) publish(db, get<ProjectRow>(db, 'SELECT * FROM projects WHERE id = ?', p.id)!);

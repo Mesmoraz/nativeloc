@@ -208,9 +208,7 @@ function GoalBar({ goal }: { goal: StatsResponse['goal'] }) {
       <div className="v-goal-bar" role="progressbar" aria-valuemin={0} aria-valuemax={goal.target} aria-valuenow={Math.min(goal.done, goal.target)} aria-label="Daily goal">
         <span style={{ width: `${Math.min(100, (goal.done / goal.target) * 100)}%` }} />
       </div>
-      <span className="small muted">
-        {goal.done} of {goal.target} cards today
-      </span>
+      <span className="small muted">{goal.done > goal.target ? `${goal.done} cards today · goal ${goal.target}` : `${goal.done} of ${goal.target} cards today`}</span>
     </div>
   );
 }

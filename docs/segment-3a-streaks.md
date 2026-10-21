@@ -8,6 +8,36 @@ gives staff the return-rate table.
 The other Segment 3 pieces, for reference: B badges and hour certificates, C new card types, D favorites, org
 Approved Reviewers and thank-you notes, E leaderboards and progress bars.
 
+## Built
+
+Where each piece lives, and what differed from the design below:
+
+- **Data:** `apps/server/src/schema/streaks.ts` (the table, the prefs columns, and the one-time fill from
+  `xp_events`).
+- **Logic:** `apps/server/src/streaks.ts`. It has `validTimeZone`, `localDay`, `localMidnightUtc`,
+  `recordActivity`, `streakOf`, `saveTimeZone` and `returnRates`, plus the goal presets and the freeze constants
+  (`FREEZE_EVERY`, `MAX_FREEZES`).
+- **Recording:** six calls in `services/review.ts`, one per path in the table under Server. Each runs inside that
+  path's transaction.
+- **Endpoints:**
+  - `stats()` in `xp.ts`
+  - settings in `routes/volunteer.ts`
+  - `PUT /api/v1/me/time-zone` and `/me`'s `timeZone` in `routes/auth.ts`
+  - `GET /api/v1/staff/engagement` in `routes/staff.ts`
+- **Web:**
+  - `App.tsx` (`syncTimeZone`) saves the time zone before the app renders, so the first stats already use it.
+  - `volunteer/VolunteerApp.tsx` has `StreakGoal`, `GoalBar` and `GoalPicker`.
+  - `staff/StaffConsole.tsx` has the "Return rates" tab, newest week first.
+- **Demo:** `apps/server/src/seed/streaks.ts`. It moves María's seed-day saves to yesterday so her home screen
+  shows "today still to do".
+- **Tests:** `apps/server/test/streaks.test.ts`. One existing assertion in `pool.test.ts` gained `dailyGoal`.
+- **Differences from the design:**
+  - `validTimeZone` also refuses offsets like `-07:00`. Node 22's `Intl` accepts them, and they're wrong half
+    the year.
+  - Past the goal, the bar reads "7 cards today · goal 5" instead of "7 of 5".
+  - Days are stamped in the zone saved for the person. The demo's seeded days are UTC, so a browser west of UTC
+    in its evening sees María's "yesterday" as today. That's the rule working as designed, not a bug.
+
 ## Decisions
 
 | # | Question | Decision | Why |

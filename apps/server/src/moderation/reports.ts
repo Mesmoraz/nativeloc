@@ -16,7 +16,7 @@ export const pausedByReports = (db: DB, projectId: number) => openReporters(db, 
  * Files a report (or replaces the reporter's open one on this project). When PAUSE_REPORTS different people have
  * open reports on an approved project, it goes back to 'pending' for staff, and `paused` is true for the report
  * that did it. Reports on projects that aren't approved are kept for staff and change nothing.
- * Other pieces can call this too (e.g. 2C turning a new volunteer's flag into a report).
+ * Community review calls this too, turning a new volunteer's 'offensive' flag into a report.
  */
 export function fileReport(db: DB, userId: number, project: ProjectRow, report: { keyId?: number | null; reason: ReportReason; note?: string | null }): { paused: boolean } {
   // No transaction of its own (callers may be in one); node:sqlite runs these back to back on one connection.

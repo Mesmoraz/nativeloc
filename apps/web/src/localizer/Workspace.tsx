@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { TopBar, useSession } from '../App';
 import { api, ApiError, type QueueItem, type QueueResponse } from '../api';
-import type { CommunityQueueFields, FlagReason } from '../contracts';
+import type { FlagReason } from '../contracts';
 import { ChipText, ProgressBar, StatusBadge } from '../components';
 import { languageName, nativeLanguageName, textDirection } from '../types';
 import { Screenshot } from './Screenshot';
@@ -117,8 +117,8 @@ export function Workspace() {
   // Peer reviewers (trusted localizers on a peer-review project) approve as one vote, and can't send work back.
   // A lead in the language reviews like a reviewer; new volunteers review after the placement check.
   const tier = session!.user.tiers[locale];
-  // Community-reviewed projects (Segment 2C): every volunteer's approval is one vote, and Flag is a third choice.
-  const community = (item as CommunityItem | undefined)?.review != null;
+  // Community-reviewed projects: every volunteer's approval is one vote, and Flag is a third choice.
+  const community = item?.review != null;
   const peer = role === 'localizer' && (community || ((meta?.project.peerApprovals ?? 0) > 0 && tier !== 'lead'));
   const canReview = role !== 'localizer' || tier === 'lead' || (peer && tier === 'trusted');
 
@@ -350,10 +350,10 @@ export function Workspace() {
               {item.description}
             </div>
           )}
-          {mode === 'review' && (item as CommunityItem).sentBack && (
+          {mode === 'review' && item.sentBack && (
             <div className="context-note">
               <b>The organization sent this back: </b>
-              {(item as CommunityItem).sentBack}
+              {item.sentBack}
             </div>
           )}
           {item.questions.map((q) => (
@@ -590,8 +590,6 @@ export function Workspace() {
     </>
   );
 }
-
-type CommunityItem = QueueItem & Partial<CommunityQueueFields> & { sentBack?: string | null };
 
 function Approvals({ count, needed }: { count: number; needed: number }) {
   return (

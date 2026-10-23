@@ -3,12 +3,12 @@ import { useSession } from '../App';
 import { ConfirmEmail } from './shared';
 import './signup.css';
 
-/** Owned by Segment 2 piece 2A. Top of Home: "Confirm your email", or "Finish setting up" for someone with no org and no languages. */
+/** Top of Home: "Confirm your email", or "Finish setting up" for someone with no org and no languages. */
 export function HomeNotice(): React.ReactNode {
   const { session } = useSession();
   if (!session) return null;
   const { user, orgs } = session;
-  if (user.emailVerified === false) return <ConfirmEmail email={user.email} compact />;
+  if (!user.emailVerified) return <ConfirmEmail email={user.email} compact />;
   if (!orgs.length && !user.locales.length) {
     return (
       <div className="card row">

@@ -41,7 +41,7 @@ function orgFields(body: OrgBody, type: OrgType): OrgFields {
   }
   if (body.ein !== undefined) {
     if (type !== 'nonprofit') throw new HttpError(400, 'Only nonprofits have an EIN here.');
-    // Groups without an EIN may leave it out; they go to the staff queue (2B).
+    // Groups without an EIN may leave it out; they go to the staff queue.
     out.ein = body.ein.trim() ? normalizeEin(body.ein) : null;
     if (body.ein.trim() && !out.ein) throw new HttpError(400, 'An EIN is 9 digits, like 12-3456789.');
   }
@@ -66,7 +66,7 @@ const orgOut = (db: DB, id: number, role: string) => {
   return { ...orgJson(o), role, ein: o.ein, state: o.state };
 };
 
-/** Owned by Segment 2 piece 2A (sign-up and onboarding). Endpoints: docs/segment-2-contracts.md §2A. */
+/** Sign-up and onboarding: accounts, email confirmation, settings and orgs. Endpoints: docs/segment-2-contracts.md §3. */
 export function signupRoutes(app: FastifyInstance, { db }: RouteDeps) {
   // ----- accounts -----
 
@@ -168,7 +168,7 @@ export function signupRoutes(app: FastifyInstance, { db }: RouteDeps) {
     const f = orgFields(req.body ?? {}, before.type);
     const sets = Object.entries(f);
     if (sets.length) run(db, `UPDATE orgs SET ${sets.map(([k]) => `${k} = ?`).join(', ')} WHERE id = ?`, ...sets.map(([, v]) => v ?? null), m.orgId);
-    // What verification matched on changed: check again (2B may verify automatically, or queue it for staff).
+    // What verification matched on changed: check again (it may verify automatically, or go to staff).
     if ((['name', 'ein', 'state'] as const).some((k) => k in f && f[k] !== before[k])) startVerification(db, orgRow(db, m.orgId));
     return { org: orgOut(db, m.orgId, m.role) };
   });

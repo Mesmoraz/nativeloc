@@ -36,7 +36,7 @@ const PLATFORM_ITEMS: Record<string, Item[]> = {
   ],
 };
 
-/** Owned by Segment 2 piece 2A. Demo data for sign-up and onboarding. Runs once, after the core demo seed, before v1 is published. */
+/** Demo data for sign-up and onboarding. Runs once, after the core demo seed, before v1 is published. */
 export function seedSignup(db: DB, demo: Demo) {
   const platform = ensurePlatformOrg(db);
   // The demo admin is staff, so they run the community org and grade its placement checks (and see the org switcher).

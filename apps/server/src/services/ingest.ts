@@ -3,7 +3,7 @@ import { HttpError } from '../auth.js';
 import { all, get, run, tx, type DB, type KeyRow, type ProjectRow } from '../db.js';
 import { projectLocales } from './progress.js';
 
-// Owned by Segment 2 piece 2D (posting content). The paste-text splitter and crawl jobs feed upsertEntries.
+// Every way strings come in (CLI push, file import, paste, website crawl) goes through upsertEntries.
 
 export interface UpsertResult {
   created: number;

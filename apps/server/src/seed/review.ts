@@ -5,7 +5,7 @@ import { upsertEntries } from '../services/ingest.js';
 import type { Demo } from './types.js';
 
 /**
- * Owned by Segment 2 piece 2C. Demo data for the community review engine: a community-reviewed project with text
+ * Demo data for community review: a community-reviewed project with text
  * waiting on the poster's "Ready to publish" list (one clean, one disputed), one string still in review with a flag,
  * and five Spanish volunteers who did the reviewing (password demo-localizer-pass).
  */

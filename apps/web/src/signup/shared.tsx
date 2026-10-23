@@ -13,7 +13,7 @@ export const ORG_TYPE_LABEL: Record<OrgType, string> = {
   business: 'Business',
 };
 
-/** OrgMembership plus what 2A's org endpoints add for admins. */
+/** OrgMembership plus what the org endpoints add for admins. */
 export type OrgDetails = OrgMembership & { ein?: string | null; state?: string | null };
 
 /** Pick languages: tap the common ones, or type a code. */

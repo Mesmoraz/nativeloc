@@ -7,6 +7,7 @@ import { schema as poolSchema } from './schema/pool.js';
 import { schema as postingSchema } from './schema/posting.js';
 import { schema as reviewSchema } from './schema/review.js';
 import { schema as signupSchema } from './schema/signup.js';
+import { schema as streaksSchema } from './schema/streaks.js';
 
 // Loaded via require so bundlers/test runners that don't know `node:sqlite` leave it alone.
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
@@ -265,9 +266,9 @@ export function openDb(path: string): DB {
   db.exec(SCHEMA);
   migrateAfter(db, existing);
   db.exec(TRIGGERS);
-  for (const piece of PIECE_SCHEMAS) {
-    if (piece.sql) db.exec(piece.sql);
-    piece.migrate?.(db);
+  for (const feature of FEATURE_SCHEMAS) {
+    if (feature.sql) db.exec(feature.sql);
+    feature.migrate?.(db);
   }
   return db;
 }
@@ -368,14 +369,14 @@ function migrateAfter(db: DB, existing: Set<string>) {
 }
 
 /**
- * Tables and columns the Segment 2 pieces add live in their own files (apps/server/src/schema/), so no two
- * pieces edit this one. Each runs after the core schema, in this order, on every start: write idempotent SQL.
+ * Each feature keeps its tables and columns in its own file (apps/server/src/schema/). They run after the core
+ * schema, in this order, on every start, so their SQL must be idempotent.
  */
-export interface PieceSchema {
+export interface FeatureSchema {
   sql?: string;
   migrate?: (db: DB) => void;
 }
-const PIECE_SCHEMAS: PieceSchema[] = [signupSchema, moderationSchema, reviewSchema, postingSchema, poolSchema];
+const FEATURE_SCHEMAS: FeatureSchema[] = [signupSchema, moderationSchema, reviewSchema, postingSchema, poolSchema, streaksSchema];
 
 type Param = string | number | bigint | null | Uint8Array;
 
@@ -416,6 +417,8 @@ export interface UserRow {
 /** Select users with this, never `*`, so the legacy columns can't leak into a UserRow. */
 export const USER_COLUMNS = 'id, email, name, password_hash, locales, is_staff';
 export const getUser = (db: DB, id: number) => get<UserRow>(db, `SELECT ${USER_COLUMNS} FROM users WHERE id = ?`, id);
+export const ORG_COLUMNS = 'id, name, type, verification, ein, website, description';
+export const getOrg = (db: DB, id: number) => get<OrgRow>(db, `SELECT ${ORG_COLUMNS} FROM orgs WHERE id = ?`, id);
 
 export interface MembershipRow {
   user_id: number;

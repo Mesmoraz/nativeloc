@@ -31,5 +31,4 @@ Endpoints are in [segment-2-contracts.md](segment-2-contracts.md) §3 (2D). What
 - **Web:** `/new` (project, languages, visibility, review mode) → `/new/:id` (paste, file or website, then submit).
   Project admin gains "Add text" and "Sharing" tabs (visibility, review mode, moderation state with 2B's reasons and
   staff note, submit). Home's "New project" goes to `/new`; business orgs see the waitlist note instead.
-- **For the coordinator:** the server package imports `@nativeloc/site`, which `apps/server/package.json` (frozen) doesn't list.
-  It resolves through the workspace; add `"@nativeloc/site": "*"` to the server's dependencies when the file unfreezes.
+- The server package depends on `@nativeloc/site` for the crawler.

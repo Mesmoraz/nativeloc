@@ -2,14 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { TopBar } from '../App';
 import { api } from '../api';
-import type { ModerationDecision, ProjectPriority, ModerationQueueResponse, OrgType, VerificationDecision, VerificationQueueResponse } from '../contracts';
+import type { EngagementResponse, ModerationDecision, ProjectPriority, ModerationQueueResponse, OrgType, VerificationDecision, VerificationQueueResponse } from '../contracts';
 import './staff.css';
 
 const TYPE_LABEL: Record<OrgType, string> = { nonprofit: 'Nonprofit', individual: 'Individual', small_org: 'Community group', business: 'Business' };
 
-/** NativeLoc staff: verify nonprofits and moderate public projects. Server enforces users.is_staff. */
+/** NativeLoc staff: verify nonprofits, moderate public projects, and watch volunteer return rates. Server enforces users.is_staff. */
 export function StaffConsole() {
-  const [tab, setTab] = useState<'verifications' | 'moderation'>('moderation');
+  const [tab, setTab] = useState<'verifications' | 'moderation' | 'returns'>('moderation');
   const [verifications, setVerifications] = useState<VerificationQueueResponse['orgs'] | null>(null);
   const [projects, setProjects] = useState<ModerationQueueResponse['projects'] | null>(null);
   const [error, setError] = useState('');
@@ -44,6 +44,9 @@ export function StaffConsole() {
           <button className={tab === 'verifications' ? 'active' : ''} onClick={() => setTab('verifications')}>
             Nonprofits{verifications ? ` (${verifications.length})` : ''}
           </button>
+          <button className={tab === 'returns' ? 'active' : ''} onClick={() => setTab('returns')}>
+            Return rates
+          </button>
         </nav>
         {error && <div className="alert error">{error}</div>}
         {tab === 'moderation' && projects && (
@@ -62,6 +65,7 @@ export function StaffConsole() {
             ))}
           </div>
         )}
+        {tab === 'returns' && <ReturnRates />}
       </main>
     </>
   );
@@ -191,6 +195,52 @@ function OrgCard({ item, onDone }: { item: VerificationQueueResponse['orgs'][num
         </button>
         <button onClick={() => void decide('rejected')}>Reject</button>
       </div>
+    </div>
+  );
+}
+
+const weekOf = (start: string) => new Date(`${start}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+/** Segment 3's "done when": of the volunteers active in a week, how many came back the next week. */
+function ReturnRates() {
+  const [weeks, setWeeks] = useState<EngagementResponse['weeks'] | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    api<EngagementResponse>('/api/v1/staff/engagement').then(
+      (r) => setWeeks(r.weeks),
+      (e: Error) => setError(e.message),
+    );
+  }, []);
+  if (error) return <div className="alert error">{error}</div>;
+  if (!weeks) return null;
+  return (
+    <div className="card">
+      <table className="list">
+        <thead>
+          <tr>
+            <th>Week of</th>
+            <th>Active volunteers</th>
+            <th>Came back next week</th>
+            <th>Return rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[...weeks].reverse().map((w) => (
+            <tr key={w.start}>
+              <td>{weekOf(w.start)}</td>
+              <td>{w.active}</td>
+              <td>{w.returned}</td>
+              <td>
+                {w.active ? `${Math.round((w.returned / w.active) * 100)}%` : '—'}
+                {!w.complete && <span className="muted"> so far</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="small muted" style={{ marginBottom: 0 }}>
+        Counts volunteers, not names. Activity as an org admin or reviewer is left out. Weeks start on Monday, in each volunteer&apos;s own time zone.
+      </p>
     </div>
   );
 }

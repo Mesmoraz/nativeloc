@@ -76,10 +76,8 @@ export function screenText(sources: string[], orgType?: string): ScreenResult {
 }
 
 /**
- * Owned by Segment 2 piece 2B (verification and moderation).
- *
- * The automatic screen. 2D's "submit for moderation" calls this, then stores `moderation = decision` on the
- * project (and 2B's queue picks up 'pending'). Each call is recorded (moderation_screens) so the staff queue
+ * The automatic screen. "Submit for moderation" calls this, then stores `moderation = decision` on the
+ * project (the staff queue picks up 'pending'). Each call is recorded (moderation_screens) so the staff queue
  * can show the reasons and when it was submitted.
  *
  * A project staff rejected or asked to change, or one paused by reports, always goes back to staff: the

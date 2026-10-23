@@ -1,7 +1,7 @@
-// Owned by Segment 2 piece 2E (open volunteer pool). Tune the card order here, in one place.
+// The order volunteers get cards in. Tune it here, in one place.
 //
 // A card's score is in hours: how long the string has waited (capped), plus boosts. A volunteer's session takes the
-// highest-scoring cards. Segment 3 rankers (favorites, campaign deadlines) add their own entries to BOOSTS.
+// highest-scoring cards. New rankers (favorites, campaign deadlines) add their own entries to BOOSTS.
 
 export type ProjectPriority = 'low' | 'normal' | 'high';
 export const PRIORITIES: ProjectPriority[] = ['low', 'normal', 'high'];

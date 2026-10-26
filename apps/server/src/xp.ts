@@ -9,6 +9,8 @@ import { dailyGoalOf, localDay, localMidnightUtc, streakOf, timeZoneOf } from '.
  * that changes the translation, so the ledger can't drift from it.
  */
 export const XP = { translate: 10, review: 5 } as const;
+/** Spot the problem (a correct answer) and Pick the better one: see cards/spot.ts and cards/pick.ts. */
+export const CARD_XP = { check: 5, pick: 5 } as const;
 
 export type XpKind = keyof typeof XP;
 /** The `xp` field of the save and approve responses: what this action earned, or null. */

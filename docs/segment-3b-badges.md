@@ -173,8 +173,10 @@ interface Certificate {
 ## Demo data
 
 `apps/server/src/seed/badges.ts`, run after the streaks seed:
-- María: enough accepted strings for First approved, plus Rare voice in Spanish (the demo has few Spanish
-  volunteers). Her badges are left unseen, so the first visit shows the "New badge" moment.
+- María: First approved (she already has an accepted string). Spanish has six active demo volunteers, so it isn't
+  rare. Her badges are left unseen, so the first visit shows the "New badge" moment.
+- Yuki: a few accepted Japanese strings, giving First approved and Rare voice (she's the demo's only Japanese
+  volunteer).
 - One issued certificate for María, so the verify page can be opened from the demo.
 
 ## Tests
@@ -182,8 +184,8 @@ interface Certificate {
 `apps/server/test/badges.test.ts`:
 - Each badge: not earned below its threshold, earned at it, with the right date (`settled_at` of the nth string,
   or the 10th org).
-- Rare voice: earned in a language with 5 active volunteers, not in one with 6; counted again when a 7th joins it
-  (stays).
+- Rare voice: earned in a language with 5 active volunteers, not in one with 6. Once earned, it stays when the
+  language gains more volunteers.
 - Trusted and Lead: earned, and kept after a demotion.
 - `awardBadges` twice in a row adds nothing the second time. `seen` clears `new`.
 - Pending and voided XP earn neither badges nor hours.

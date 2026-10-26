@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
+import { numbersIn, plant } from '../src/cards/spot.js';
 import { all, get, openDb, run, type DB } from '../src/db.js';
 
 let app: FastifyInstance;
@@ -46,5 +47,33 @@ describe('ledger kinds', () => {
 
   it('accepts the new kinds on a fresh database', () => {
     expect(get<{ sql: string }>(db, "SELECT sql FROM sqlite_master WHERE name = 'xp_events'")!.sql).toContain("'pick'");
+  });
+});
+
+describe('numbers', () => {
+  it('finds numbers in any digit script, by digit value', () => {
+    expect(numbersIn('Call 555-0100 by 5 PM').map((n) => n.value)).toEqual(['555', '0100', '5']);
+    expect(numbersIn('حتى الساعة ٥').map((n) => n.value)).toEqual(['5']);
+    expect(numbersIn('午後５時まで').map((n) => n.value)).toEqual(['5']);
+    expect(numbersIn('no numbers')).toEqual([]);
+  });
+
+  const once = () => 0; // always the first candidate
+
+  it('changes one shared number, adding 1 to its last digit', () => {
+    expect(plant('Open until 5 PM', 'Abierto hasta las 5 p. m.', once)).toEqual({ shown: 'Abierto hasta las 6 p. m.', original: '5', changed: '6' });
+    expect(plant('Call 555-0109', 'Llame al 555-0109', () => 0.99)).toEqual({ shown: 'Llame al 555-0100', original: '0109', changed: '0100' });
+  });
+
+  it("keeps the digit's script", () => {
+    expect(plant('Open until 5', 'مفتوح حتى ٥', once)).toEqual({ shown: 'مفتوح حتى ٦', original: '٥', changed: '٦' });
+    expect(plant('Until 5', '５時まで', once)?.shown).toBe('６時まで');
+  });
+
+  it("won't plant a number the source also has, or without a shared number", () => {
+    expect(plant('Open 5 to 6', 'Abierto de 5 a 6', () => 0)).toEqual({ shown: 'Abierto de 5 a 7', original: '6', changed: '7' });
+    expect(plant('Open 5 or 6', 'Abierto 5', once)).toBeNull();
+    expect(plant('Open until five', 'Abierto hasta las 5', once)).toBeNull();
+    expect(plant('Hello', 'Hola', once)).toBeNull();
   });
 });

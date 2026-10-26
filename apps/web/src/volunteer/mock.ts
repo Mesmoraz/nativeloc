@@ -5,7 +5,7 @@ import { listPlaceholders, pluralExamples, targetTemplate, toEditorModel, valida
 import { ApiError, type QueueItem } from '../api';
 import type { VolunteerClient } from './client';
 import type { CardOrg } from '../contracts';
-import type { Card, StatsResponse, VolunteerSettings } from './types';
+import type { Card, Certificate, StatsResponse, VolunteerSettings } from './types';
 import { XP } from './types';
 
 const LOCALE = 'es';
@@ -110,6 +110,7 @@ const byKey = new Map<number, { project: typeof FOOD_BANK; item: QueueItem }>(
 
 let sessions = 0;
 const settings: VolunteerSettings = { nonprofitsOnly: false, dailyGoal: 5 };
+const certificates: Certificate[] = [];
 const stats: StatsResponse = {
   xp: { accepted: 140, pending: 20 },
   today: { accepted: 0, pending: 0 },
@@ -182,6 +183,41 @@ export const mockClient: VolunteerClient = {
     settings.dailyGoal = goal;
     stats.goal.target = goal;
     return structuredClone(settings);
+  },
+
+  async markBadgesSeen(ids) {
+    for (const b of stats.badges) if (ids.includes(b.id)) b.new = false;
+  },
+
+  async certificates() {
+    await wait(100);
+    return structuredClone(certificates);
+  },
+
+  async issueCertificate(from, to) {
+    await wait();
+    const c: Certificate = {
+      code: `vc_mock${certificates.length + 1}`,
+      name: 'Mock Volunteer',
+      periodFrom: from ?? null,
+      periodTo: to ?? new Date().toISOString().slice(0, 10),
+      hours: 3.5,
+      translations: 80,
+      reviews: 50,
+      orgs: [FOOD_BANK.name],
+      rates: { version: '2026-10', translate: 2, review: 1 },
+      issuedAt: new Date().toISOString().slice(0, 19).replace('T', ' '),
+      revokedAt: null,
+    };
+    certificates.unshift(c);
+    return structuredClone(c);
+  },
+
+  async revokeCertificate(code) {
+    await wait(100);
+    const c = certificates.find((x) => x.code === code)!;
+    c.revokedAt ??= new Date().toISOString().slice(0, 19).replace('T', ' ');
+    return structuredClone(c);
   },
 
   async flag() {

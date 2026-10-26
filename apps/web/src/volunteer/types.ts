@@ -92,3 +92,31 @@ export interface XpAward {
 
 /** Point values. The server is the source of truth; the web app may use these for animations. */
 export const XP = { translate: 10, review: 5 } as const;
+
+/**
+ * POST/GET /api/v1/volunteer/certificates and the public GET /api/v1/certificates/:code. Hours are estimated from
+ * accepted work at `rates` (minutes per card), in halves. The verify link is /certificate/<code> on this site.
+ */
+export interface Certificate {
+  code: string;
+  name: string;
+  periodFrom: string | null;
+  periodTo: string;
+  hours: number;
+  translations: number;
+  reviews: number;
+  orgs: string[];
+  rates: { version: string; translate: number; review: number };
+  issuedAt: string;
+  revokedAt: string | null;
+}
+/** The public read of a revoked certificate: no numbers, just that it was withdrawn. */
+export interface RevokedCertificate {
+  code: string;
+  revoked: true;
+  name: string;
+  periodFrom: string | null;
+  periodTo: string;
+  issuedAt: string;
+  revokedAt: string;
+}

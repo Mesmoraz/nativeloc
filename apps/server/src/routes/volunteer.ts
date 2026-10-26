@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { HttpError, requireUser } from '../auth.js';
 import { get, run, type DB } from '../db.js';
 import { BADGE_IDS, markSeen, type BadgeId } from '../badges.js';
+import { certificatesOf, issueCertificate, publicCertificate, revokeCertificate } from '../certificates.js';
 import { buildSession } from '../pool/session.js';
 import { DAILY_GOALS, dailyGoalOf, type DailyGoal } from '../streaks.js';
 import { stats } from '../xp.js';
@@ -53,6 +54,15 @@ export function volunteerRoutes(app: FastifyInstance, db: DB) {
     markSeen(db, user.id, ids as BadgeId[]);
     return { ok: true };
   });
+
+  // Volunteer-hour certificates (certificates.ts). The public read needs no sign-in: it's how a school checks one.
+  app.post<{ Body: { from?: unknown; to?: unknown } }>('/api/v1/volunteer/certificates', async (req) => {
+    const { user } = requireUser(db, req);
+    return issueCertificate(db, user, req.body ?? {});
+  });
+  app.get('/api/v1/volunteer/certificates', async (req) => ({ certificates: certificatesOf(db, requireUser(db, req).user.id) }));
+  app.delete<{ Params: { code: string } }>('/api/v1/volunteer/certificates/:code', async (req) => revokeCertificate(db, requireUser(db, req).user.id, req.params.code));
+  app.get<{ Params: { code: string } }>('/api/v1/certificates/:code', async (req) => publicCertificate(db, req.params.code));
 
   // The volunteer's card-session settings.
   const settings = (userId: number) => ({ nonprofitsOnly: nonprofitsOnlyPref(db, userId), dailyGoal: dailyGoalOf(db, userId) });

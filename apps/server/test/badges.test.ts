@@ -207,3 +207,102 @@ describe('badges over HTTP', () => {
     expect((await stats(b)).badges[0].new).toBe(true);
   });
 });
+
+describe('certificates', () => {
+  const issue = (u: number, payload: object = {}) => app.inject({ method: 'POST', url: '/api/v1/volunteer/certificates', headers: as(u), payload });
+  const pub = (code: string) => app.inject({ url: `/api/v1/certificates/${code}` });
+  /** `t` accepted translations and `r` accepted reviews, done on `day`, in project `p`. */
+  const work = (u: number, p: number, t: number, r: number, day = '2026-03-10') => {
+    for (let i = 0; i < t; i++) xp(u, p, { createdAt: `${day} 12:00:00`, settledAt: `${day} 13:00:00` });
+    for (let i = 0; i < r; i++) xp(u, p, { kind: 'review', createdAt: `${day} 12:00:00`, settledAt: `${day} 13:00:00` });
+  };
+
+  it('counts 2 minutes a translation and 1 a review, rounded down to the half hour', async () => {
+    const cases: [number, number, number | null][] = [
+      [14, 1, null], // 29 minutes
+      [15, 0, 0.5], // 30
+      [29, 1, 0.5], // 59
+      [30, 0, 1], // 60
+    ];
+    for (const [t, r, hours] of cases) {
+      const u = await user();
+      work(u, project(), t, r);
+      const res = await issue(u);
+      if (hours === null) {
+        expect(res.statusCode).toBe(422);
+        expect(res.json().error).toBe("There isn't half an hour of accepted work in that period yet.");
+      } else {
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toMatchObject({ hours, translations: t, reviews: r, rates: { version: '2026-10', translate: 2, review: 1 } });
+      }
+    }
+  });
+
+  it("doesn't count pending or voided work", async () => {
+    const u = await user();
+    const p = project();
+    work(u, p, 15, 0);
+    for (let i = 0; i < 20; i++) xp(u, p, { status: 'pending', createdAt: '2026-03-10 12:00:00' });
+    for (let i = 0; i < 20; i++) xp(u, p, { status: 'voided', createdAt: '2026-03-10 12:00:00' });
+    expect((await issue(u)).json()).toMatchObject({ hours: 0.5, translations: 15, reviews: 0 });
+  });
+
+  it('counts work done in the period, accepted by now, and lists each org once', async () => {
+    const u = await user();
+    const a = project('Alpha Pantry');
+    const b = project('Beta Shelter');
+    work(u, b, 10, 0, '2026-03-01');
+    work(u, a, 5, 0, '2026-03-31');
+    work(u, a, 5, 0, '2026-02-28'); // before
+    work(u, a, 5, 0, '2026-04-01'); // after
+    // Done in March, accepted in May: counts.
+    xp(u, b, { createdAt: '2026-03-15 10:00:00', settledAt: '2026-05-01 10:00:00' });
+    const c = (await issue(u, { from: '2026-03-01', to: '2026-03-31' })).json();
+    expect(c).toMatchObject({ periodFrom: '2026-03-01', periodTo: '2026-03-31', translations: 16, orgs: ['Alpha Pantry', 'Beta Shelter'] });
+    expect((await issue(u, { to: '2026-03-31' })).json()).toMatchObject({ periodFrom: null, translations: 21 });
+  });
+
+  it('refuses bad periods', async () => {
+    const u = await user();
+    work(u, project(), 15, 0);
+    const tomorrow = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+    for (const body of [{ to: tomorrow }, { from: '2026-03-02', to: '2026-03-01' }, { from: '2026-13-01' }, { to: 'soon' }, { from: '2026-02-30' }]) {
+      expect((await issue(u, body)).statusCode).toBe(400);
+    }
+  });
+
+  it('is public by code, stays as issued, and can be revoked by its owner only', async () => {
+    const u = await user('Rosa Diaz');
+    const other = await user();
+    const p = project('Gamma Clinic');
+    work(u, p, 15, 0);
+    const c = (await issue(u)).json();
+    expect(c.code).toMatch(/^vc_[\w-]{32}$/);
+    const read = await pub(c.code);
+    expect(read.statusCode).toBe(200);
+    expect(read.json()).toEqual(c);
+    expect(read.json()).toMatchObject({ name: 'Rosa Diaz', hours: 0.5, revokedAt: null });
+
+    work(u, p, 30, 0);
+    expect((await pub(c.code)).json()).toEqual(c);
+
+    expect((await app.inject({ method: 'DELETE', url: `/api/v1/volunteer/certificates/${c.code}`, headers: as(other) })).statusCode).toBe(404);
+    const revoked = await app.inject({ method: 'DELETE', url: `/api/v1/volunteer/certificates/${c.code}`, headers: as(u) });
+    expect(revoked.json().revokedAt).toBeTruthy();
+    const after = (await pub(c.code)).json();
+    expect(after).toEqual({ code: c.code, revoked: true, name: 'Rosa Diaz', periodFrom: null, periodTo: c.periodTo, issuedAt: c.issuedAt, revokedAt: revoked.json().revokedAt });
+  });
+
+  it('lists your certificates newest first, and 404s unknown or deleted ones', async () => {
+    const u = await user();
+    work(u, project(), 40, 0);
+    const first = (await issue(u, { to: '2026-03-10' })).json();
+    run(db, "UPDATE volunteer_certificates SET issued_at = '2026-01-01 00:00:00' WHERE code = ?", first.code);
+    const second = (await issue(u)).json();
+    const list = (await app.inject({ url: '/api/v1/volunteer/certificates', headers: as(u) })).json();
+    expect(list.certificates.map((c: { code: string }) => c.code)).toEqual([second.code, first.code]);
+    expect((await pub('vc_nope')).statusCode).toBe(404);
+    run(db, 'DELETE FROM users WHERE id = ?', u);
+    expect((await pub(second.code)).statusCode).toBe(404);
+  });
+});

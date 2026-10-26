@@ -62,7 +62,7 @@ export function CertificatePage() {
         <h1 className="cert-name">{cert.name}</h1>
         <p className="cert-lede">translated and reviewed text for community organizations, so people can read it in their own language.</p>
         <p className="cert-hours">
-          <span className="cert-hours-num">{cert.hours.toLocaleString()}</span> volunteer hours
+          <span className="cert-hours-num">{cert.hours.toLocaleString()}</span> volunteer {cert.hours === 1 ? 'hour' : 'hours'}
         </p>
         <p className="cert-period">For {periodOf(cert)}</p>
         {cert.orgs.length > 0 && (

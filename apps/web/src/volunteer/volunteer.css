@@ -187,3 +187,4 @@
 .v-cert-list li.revoked { opacity: 0.6; }
 .v-cert-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .v-btn.small { padding: 6px 12px; font-size: 0.9rem; min-height: 0; }
+a.v-btn { display: inline-flex; align-items: center; text-decoration: none; color: var(--muted); }

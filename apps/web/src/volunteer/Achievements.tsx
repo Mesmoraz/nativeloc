@@ -130,7 +130,7 @@ export function Achievements({ stats, client, onBack }: { stats: StatsResponse |
               {certs.map((c) => (
                 <li key={c.code} className={c.revokedAt ? 'revoked' : ''}>
                   <div>
-                    <b>{c.revokedAt ? 'Withdrawn' : `${c.hours} hours`}</b> <span className="small muted">· {period(c)}</span>
+                    <b>{c.revokedAt ? 'Withdrawn' : `${c.hours} ${c.hours === 1 ? 'hour' : 'hours'}`}</b> <span className="small muted">· {period(c)}</span>
                   </div>
                   <div className="v-cert-actions">
                     <a className="v-btn ghost small" href={certificateUrl(c.code)} target="_blank" rel="noreferrer">

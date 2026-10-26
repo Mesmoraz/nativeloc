@@ -616,9 +616,7 @@ export function SpotCard({ card, client, onDone }: { card: SpotCardData; client:
           </button>
         ) : (
           <>
-            <button className="v-btn ghost" onClick={() => onDone({ outcome: 'skipped', xp: null })} disabled={busy}>
-              Skip
-            </button>
+            {/* No Skip: a check takes a few seconds, and the ✕ still ends the session. */}
             <button className="v-btn" onClick={() => void send('problem')} disabled={busy}>
               Something’s wrong
             </button>

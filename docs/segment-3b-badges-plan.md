@@ -1,8 +1,8 @@
 # Segment 3B implementation plan: badges and hour certificates
 
-Design: [segment-3b-badges.md](segment-3b-badges.md). Committed locally on `claude/eloquent-edison-8uzsd8` and
-**not pushed until PR #5 merges** (the user's call). After it merges, restart the branch from `main` and replay
-these commits on top, so they become a new PR rather than part of #5.
+Design: [segment-3b-badges.md](segment-3b-badges.md). Work on `claude/segment-3b`, branched from PR #5's head
+(the user's call, so piece B stays out of PR #5). It carries PR #5's commits underneath; once #5 merges, merge
+`main` in so a 3B PR shows only its own work.
 
 Same rules as 3A: tests first for server logic. **Checks** means `npm test`, `npm run typecheck`, and
 `python -m unittest discover -s sdks/python`. Commit after each task with the session's attribution lines. Use
@@ -178,4 +178,4 @@ Commit: "Demo badges and a certificate".
    - `platform-vision.md` §9: the Eagle eye and First responder note
    - `segment-3b-badges.md`: a "Built" section
 4. Final checks. Commit: "Document Segment 3B".
-5. **Don't push.** Report, and wait for PR #5 to merge (see the top of this plan).
+5. Push `claude/segment-3b`. No PR until asked (and until PR #5 merges; see the top of this plan).

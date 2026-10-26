@@ -40,12 +40,15 @@ the endpoint shapes; where the screens live; the demo data; the tests.
 | `bridge_builder` | Bridge builder | your accepted work (translations or reviews) is in projects of 10 different orgs | when work for the 10th org was first accepted |
 | `trusted` | Trusted | you hold `trusted` or `lead` in any language (`user_languages`) | when first noticed |
 | `lead` | Lead | you hold `lead` in any language | when first noticed |
-| `rare_voice` | Rare voice | you have accepted work in a language where 5 or fewer volunteers were active in the last 30 days | when first noticed; `detail` is the language |
+| `rare_voice` | Rare voice | you were active in a language in the last 30 days, have accepted work in it, and 5 or fewer volunteers (you included) were active in it in that time | when first noticed; `detail` is the language |
 
 - "Accepted" means `xp_events.status = 'accepted'`, so XP and badges agree. Accepted XP is never taken back
   (`xp.ts`), so the count badges can't become false. Tiers and Rare voice can, which is why badges are stored.
 - "Volunteers active" for Rare voice: distinct people with `volunteer_activity` in that locale in the last 30
   days, acting as `localizer` or unknown (the same people return rates count). It counts you too.
+- You must be active in the language yourself (§4 says "*active* in a language with few volunteers"). Without that,
+  a language nobody has touched in a month would count as rare for anyone with old accepted work in it. This
+  was tightened during implementation.
 - Before launch nearly every language is rare, so early volunteers will earn Rare voice quickly. That's intended:
   they really are rare voices.
 - Eagle eye and First responder are in the catalog as `later: true`, so the app can list them as "coming" without

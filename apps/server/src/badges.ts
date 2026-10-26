@@ -8,7 +8,7 @@ import { localDay } from './streaks.js';
  * when the volunteer's stats load.
  */
 
-/** `later`: shown as "coming", awarded once their data exists (Eagle eye: piece C; First responder: Segment 4). */
+/** `later`: shown as "coming", awarded once its data exists (First responder: Segment 4's urgent lane). */
 export const BADGES = [
   { id: 'approved_1' },
   { id: 'approved_100' },
@@ -17,7 +17,7 @@ export const BADGES = [
   { id: 'trusted' },
   { id: 'lead' },
   { id: 'rare_voice' },
-  { id: 'eagle_eye', later: true },
+  { id: 'eagle_eye' },
   { id: 'first_responder', later: true },
 ] as const;
 export type BadgeId = (typeof BADGES)[number]['id'];
@@ -27,6 +27,8 @@ export const BADGE_IDS: readonly BadgeId[] = BADGES.map((b) => b.id);
 export const RARE_MAX = 5;
 export const RARE_DAYS = 30;
 export const BRIDGE_ORGS = 10;
+/** Eagle eye: planted errors caught in Spot the problem cards. */
+export const EAGLE_EYE_CATCHES = 25;
 
 type Earned = { earnedAt: string; detail?: string } | null;
 /** XP kinds that are work for an organization. Spot the problem ('check') is practice, so it doesn't count here. */
@@ -58,6 +60,15 @@ const CHECKS: Partial<Record<BadgeId, (db: DB, userId: number, now: number) => E
          WHERE x.user_id = ? AND x.status = 'accepted' AND x.kind IN ${REAL_WORK} GROUP BY p.org_id
        ) ORDER BY at LIMIT 1 OFFSET ?`,
       u, BRIDGE_ORGS - 1,
+    );
+    return r ? { earnedAt: r.at } : null;
+  },
+  eagle_eye: (db, u) => {
+    // Catching a planted error, not a correct control: that's what an eagle eye is.
+    const r = get<{ at: string }>(
+      db,
+      'SELECT answered_at AS at FROM spot_checks WHERE user_id = ? AND planted = 1 AND correct = 1 ORDER BY answered_at, id LIMIT 1 OFFSET ?',
+      u, EAGLE_EYE_CATCHES - 1,
     );
     return r ? { earnedAt: r.at } : null;
   },

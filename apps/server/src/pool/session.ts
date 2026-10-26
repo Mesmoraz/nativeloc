@@ -1,6 +1,7 @@
 import { all, getOrg, type DB, type Member, type OrgRow, type ProjectRow, type Role, type UserRow } from '../db.js';
 import { projectLocales, queue, reviewFilter, reviewRight } from '../services.js';
 import { isVerifiedNonprofit, openPoolRole, passesNonprofitsOnly } from './access.js';
+import { dealSpot } from '../cards/spot.js';
 import { hoursSince, score } from './score.js';
 
 // Shapes are the contract in apps/web/src/volunteer/types.ts (and CardOrg in apps/web/src/contracts.ts).
@@ -13,16 +14,23 @@ interface CardOrg {
   verified: boolean;
   description: string | null;
 }
-interface Card {
+interface CardBase {
   id: string;
-  type: 'translate' | 'review';
   project: { id: number; name: string; sourceLocale: string };
   org: CardOrg;
   locale: string;
   /** The string is marked urgent. */
   urgent: boolean;
-  item: Item;
 }
+type WorkCard = CardBase & { type: 'translate' | 'review'; item: Item };
+/** Spot the problem (cards/spot.ts): no real work, a check with a known answer. */
+type SpotCard = CardBase & { type: 'spot'; spot: { checkId: number; source: string; shown: string } };
+type Card = WorkCard | SpotCard;
+
+/** Chance a session includes a Spot the problem card (docs/segment-3c-card-types.md). */
+export const SPOT_CHANCE = 1 / 3;
+/** A Spot card only joins a session with at least this many real cards, so it never stands in for missing work. */
+const SPOT_MIN_REAL = 2;
 
 /** A project the user can draw cards from, with the role they act with there. */
 interface Source {
@@ -66,7 +74,7 @@ const MAX_PER_PROJECT = 2;
 /** A string a volunteer could get a card for, with its score (see pool/score.ts). */
 interface Scored {
   s: Source;
-  type: Card['type'];
+  type: WorkCard['type'];
   locale: string;
   keyId: number;
   urgent: boolean;
@@ -81,7 +89,7 @@ const poolKey = (c: Pick<Scored, 'type' | 'keyId' | 'locale'>) => `${c.type}:${c
  * The strings a project offers in one language for one card type, longest-waiting first (urgent first): the ones
  * queue() would deal. `shot` narrows them to one screenshot's strings.
  */
-function candidates(db: DB, s: Source, locale: string, type: Card['type'], limit: number, now: number, shot?: number): Scored[] {
+function candidates(db: DB, s: Source, locale: string, type: WorkCard['type'], limit: number, now: number, shot?: number): Scored[] {
   const review = type === 'review';
   const filter = review ? reviewFilter(db, s.project, locale, s.member) : { sql: '', params: [] };
   const rows = all<{ id: number; urgent: number; shot: number | null; since: string }>(
@@ -105,15 +113,25 @@ function candidates(db: DB, s: Source, locale: string, type: Card['type'], limit
  * scored (pool/score.ts: how long it has waited, plus urgent, project priority and verified-nonprofit boosts) and the
  * best come first, at most two per project unless nothing else is left. Translate and Review alternate (Translate
  * first) while both last, but an urgent string is never held behind a non-urgent one. Strings that share a screenshot
- * are dealt together. Review cards appear only where reviewRight allows.
+ * are dealt together. Review cards appear only where reviewRight allows. About one session in three also gets a Spot
+ * the problem card (SPOT_CHANCE), after the first card, in place of the last real card when the session is full.
+ * `opts` lets tests fix the chance and the randomness.
  */
-export function buildSession(db: DB, user: UserRow, size: number, nonprofitsOnly = false, now = Date.now()): { cards: Card[]; empty: null | 'no_languages' | 'nothing_to_do' } {
+export function buildSession(
+  db: DB,
+  user: UserRow,
+  size: number,
+  nonprofitsOnly = false,
+  now = Date.now(),
+  opts: { spotChance?: number; rand?: () => number } = {},
+): { cards: Card[]; empty: null | 'no_languages' | 'nothing_to_do' } {
   const locales = JSON.parse(user.locales) as string[];
   if (!locales.length) return { cards: [], empty: 'no_languages' };
 
   const open = new Map<string, Scored>();
   const add = (list: Scored[]) => list.forEach((c) => open.set(poolKey(c), c));
-  for (const s of sources(db, user, nonprofitsOnly)) {
+  const from = sources(db, user, nonprofitsOnly);
+  for (const s of from) {
     const offered = projectLocales(db, s.project.id);
     for (const locale of locales.filter((l) => offered.includes(l))) {
       add(candidates(db, s, locale, 'translate', CANDIDATES_PER_GROUP, now));
@@ -130,13 +148,13 @@ export function buildSession(db: DB, user: UserRow, size: number, nonprofitsOnly
     const all = [...open.values()];
     // Variety first: projects under their cap; once none is left, anything goes.
     const fresh = all.filter((c) => used(c) < MAX_PER_PROJECT);
-    const from = fresh.length ? fresh : all;
-    const want: Card['type'] = picked.length % 2 === 0 ? 'translate' : 'review';
-    const ofType = from.filter((c) => c.type === want);
+    const pool = fresh.length ? fresh : all;
+    const want: WorkCard['type'] = picked.length % 2 === 0 ? 'translate' : 'review';
+    const ofType = pool.filter((c) => c.type === want);
     // Keep a screenshot's strings together: prefer one that shares a screenshot with a card of this type already dealt.
     const together = ofType.filter((c) => c.shot != null && picked.some((p) => p.type === c.type && p.s.project.id === c.s.project.id && p.shot === c.shot));
-    let pick = best(together) ?? best(ofType) ?? best(from)!;
-    const top = best(from)!;
+    let pick = best(together) ?? best(ofType) ?? best(pool)!;
+    const top = best(pool)!;
     if (top.urgent && !pick.urgent) pick = top;
     open.delete(poolKey(pick));
     dealt.add(poolKey(pick));
@@ -148,10 +166,29 @@ export function buildSession(db: DB, user: UserRow, size: number, nonprofitsOnly
     }
   }
 
+  const projectJson = (project: ProjectRow) => ({ id: project.id, name: project.name, sourceLocale: project.source_locale });
   const cards: Card[] = picked.map(({ s, type, locale, keyId, urgent }) => {
     const { project, org, member } = s;
     const [item] = queue(db, project, locale, type, { viewer: member, keyId }).items;
-    return { id: `${type}:${keyId}:${locale}`, type, project: { id: project.id, name: project.name, sourceLocale: project.source_locale }, org: cardOrg(org), locale, urgent, item };
+    return { id: `${type}:${keyId}:${locale}`, type, project: projectJson(project), org: cardOrg(org), locale, urgent, item };
   });
+
+  const rand = opts.rand ?? Math.random;
+  if (cards.length >= SPOT_MIN_REAL && rand() < (opts.spotChance ?? SPOT_CHANCE)) {
+    const spot = dealSpot(db, user.id, from, locales, rand);
+    if (spot) {
+      if (cards.length >= size) cards.pop();
+      const at = 1 + Math.floor(rand() * cards.length);
+      cards.splice(at, 0, {
+        id: `spot:${spot.checkId}`,
+        type: 'spot',
+        project: projectJson(spot.source.project),
+        org: cardOrg(spot.source.org),
+        locale: spot.locale,
+        urgent: false,
+        spot: { checkId: spot.checkId, source: spot.sourceText, shown: spot.shown },
+      });
+    }
+  }
   return { cards, empty: cards.length ? null : 'nothing_to_do' };
 }

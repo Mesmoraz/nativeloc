@@ -41,5 +41,7 @@ CREATE TABLE IF NOT EXISTS picks (
     // An Improve keeps the wording it replaced, so Pick the better one can show both.
     const cols = (db.prepare('PRAGMA table_info(reviews)').all() as { name: string }[]).map((c) => c.name);
     if (!cols.includes('previous_text')) db.exec('ALTER TABLE reviews ADD COLUMN previous_text TEXT');
+    // Who wrote that wording: they don't get a Pick card between their own text and its replacement.
+    if (!cols.includes('previous_by')) db.exec('ALTER TABLE reviews ADD COLUMN previous_by INTEGER');
   },
 };

@@ -9,6 +9,7 @@ import { awardBadges, badgesOf } from '../src/badges.js';
 import { numbersIn, plant } from '../src/cards/spot.js';
 import { addMembership, all, get, getUser, openDb, run, type DB } from '../src/db.js';
 import { buildSession } from '../src/pool/session.js';
+import { reviewOf } from '../src/services.js';
 
 let app: FastifyInstance;
 let db: DB;
@@ -192,5 +193,69 @@ describe('Spot the problem cards', () => {
     check(1, 1, '2026-03-01 00:00:00');
     awardBadges(db, u);
     expect(badgesOf(db, u).find((b) => b.id === 'eagle_eye')?.earnedAt).toBe('2026-03-01 00:00:00');
+  });
+});
+
+describe('Pick the better one cards', () => {
+  const put = (u: number, k: number, text: string) => app.inject({ method: 'PUT', url: `/api/v1/translations/${k}/xp`, headers: as(u), payload: { text } });
+  const pick = (u: number, k: number, chosen: string, other: string) => app.inject({ method: 'POST', url: `/api/v1/translations/${k}/xp/pick`, headers: as(u), payload: { chosen, other } });
+  const picksIn = (u: number) => buildSession(db, getUser(db, u)!, 5, false, Date.now(), { spotChance: 0, rand: () => 0 }).cards.filter((c) => c.type === 'pick');
+
+  /** A community string in review, written by `author` and Improved by `improver`. */
+  async function improved(mode: 'community' | 'standard' = 'community') {
+    const o = org();
+    const p = project(o, ['xp'], mode);
+    const [author, improver, a, b, rev] = [await user(['xp'], o), await user(['xp'], o), await user(['xp'], o), await user(['xp'], o), await user(['xp'], o, 'reviewer')];
+    const k = key(p, 'Free groceries');
+    expect((await put(author, k, 'Comida gratis')).statusCode).toBe(200);
+    expect((await put(improver, k, 'Alimentos gratis')).statusCode).toBe(200);
+    return { p, k, author, improver, a, b, rev };
+  }
+
+  it('keeps the replaced wording on an Improve', async () => {
+    const { k, author } = await improved();
+    expect(get(db, "SELECT text, previous_text, previous_by FROM reviews WHERE key_id = ? AND kind = 'improve'", k)).toEqual({ text: 'Alimentos gratis', previous_text: 'Comida gratis', previous_by: author });
+  });
+
+  it("deals it in a Review slot, but not to either writer, and not in standard review", async () => {
+    const { k, author, improver, a } = await improved();
+    const cards = picksIn(a);
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ type: 'pick', id: `pick:${k}:xp`, pick: { keyId: k, source: 'Free groceries' } });
+    const shown = cards[0].type === 'pick' ? [cards[0].pick.a, cards[0].pick.b].sort() : [];
+    expect(shown).toEqual(['Alimentos gratis', 'Comida gratis']);
+    expect(picksIn(author)).toEqual([]);
+    expect(picksIn(improver)).toEqual([]);
+
+    const std = await improved('standard');
+    expect(picksIn(std.a)).toEqual([]);
+  });
+
+  it('saves a pick once, as advice, and settles its XP by the wording that wins', async () => {
+    const { k, a, b, rev } = await improved();
+    const res = await pick(a, k, 'Alimentos gratis', 'Comida gratis');
+    expect(res.json()).toEqual({ ok: true, xp: { points: 5, status: 'pending' } });
+    expect((await pick(a, k, 'Alimentos gratis', 'Comida gratis')).statusCode).toBe(409);
+    expect(picksIn(a)).toEqual([]);
+    await pick(b, k, 'Comida gratis', 'Alimentos gratis');
+    expect(reviewOf(db, k, 'xp')).toMatchObject({ approvals: 0, picks: [{ text: 'Alimentos gratis', count: 1 }, { text: 'Comida gratis', count: 1 }] });
+    expect(get<{ n: number }>(db, "SELECT COUNT(*) AS n FROM volunteer_activity WHERE key_id = ? AND user_id = ? AND kind = 'review'", k, a)!.n).toBe(1);
+
+    expect((await app.inject({ method: 'POST', url: `/api/v1/translations/${k}/xp/approve`, headers: as(rev) })).statusCode).toBe(200);
+    const xp = (u: number) => get<{ status: string }>(db, "SELECT status FROM xp_events WHERE user_id = ? AND key_id = ? AND kind = 'pick'", u, k)!.status;
+    expect(xp(a)).toBe('accepted');
+    expect(xp(b)).toBe('voided');
+  });
+
+  it('refuses a stale pair, a non-reviewer, and voids picks on a send-back', async () => {
+    const { k, a, b, rev, improver } = await improved();
+    expect((await pick(a, k, 'Comida gratis', 'Something else')).statusCode).toBe(409);
+    const outsider = await user(['xp']);
+    expect([403, 404]).toContain((await pick(outsider, k, 'Comida gratis', 'Alimentos gratis')).statusCode);
+    await pick(b, k, 'Comida gratis', 'Alimentos gratis');
+    await put(improver, k, 'Alimentos sin costo');
+    expect((await pick(a, k, 'Alimentos gratis', 'Comida gratis')).statusCode).toBe(409);
+    expect((await app.inject({ method: 'POST', url: `/api/v1/translations/${k}/xp/reject`, headers: as(rev) })).statusCode).toBe(200);
+    expect(get<{ status: string }>(db, "SELECT status FROM xp_events WHERE user_id = ? AND key_id = ? AND kind = 'pick'", b, k)!.status).toBe('voided');
   });
 });

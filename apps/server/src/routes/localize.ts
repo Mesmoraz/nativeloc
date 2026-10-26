@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { HttpError, projectAccess, requireUser } from '../auth.js';
 import { all, get, run, tx, type DB, type KeyRow } from '../db.js';
-import { approveTranslation, flagTranslation, queue, saveTranslation } from '../services.js';
+import { savePick } from '../cards/pick.js';
+import { approveTranslation, flagTranslation, queue, reviewRight, saveTranslation } from '../services.js';
 import { recordActivity } from '../streaks.js';
 import { checkLocale, intParam } from '../util.js';
 import { voidPending } from '../xp.js';
@@ -44,6 +45,15 @@ export function localizeRoutes(app: FastifyInstance, db: DB) {
     const { project, member } = projectAccess(db, req, key.project_id, 'review', locale);
     if (!member) throw new HttpError(403, 'Sign in to review.');
     return approveTranslation(db, project, member, key.id, locale);
+  });
+
+  /** Pick the better one (cards/pick.ts): which of a string's two wordings you prefer. Advice, never an approval. */
+  app.post<{ Params: { keyId: string; locale: string }; Body: { chosen?: unknown; other?: unknown } }>('/api/v1/translations/:keyId/:locale/pick', async (req) => {
+    const locale = checkLocale(req.params.locale);
+    const key = keyProject(db, intParam(req.params.keyId));
+    const { project, member } = projectAccess(db, req, key.project_id, 'review', locale);
+    if (!member || !reviewRight(db, project, member, locale)) throw new HttpError(403, 'Only reviewers can pick between wordings here.');
+    return savePick(db, project, member, key.id, locale, req.body?.chosen, req.body?.other);
   });
 
   /**

@@ -163,3 +163,27 @@
 /* Home page entry point */
 .card.v-entry { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; border-color: var(--accent); background: var(--accent-soft); }
 .v-entry .btn { padding: 10px 18px; }
+
+/* Badges and volunteer hours (segment-3b-badges.md) */
+.v-new-badge { background: var(--accent-soft); color: var(--text); border: 1px solid var(--accent); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; animation: v-pop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1); }
+@media (prefers-reduced-motion: reduce) { .v-new-badge { animation: none; } }
+.v-badge-emoji { font-size: 1.3rem; }
+.v-badge-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.v-badge-row-emoji { font-size: 1.2rem; letter-spacing: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.v-badge-row .small { white-space: nowrap; color: var(--accent); font-weight: 600; }
+.v-achievements h1 { margin: 0; }
+.v-section { font-size: 1rem; margin: 6px 0 8px; }
+.v-badges-grid { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.v-badges-grid li { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.v-badges-grid li .v-badge-emoji { font-size: 1.6rem; width: 2rem; text-align: center; flex: none; }
+.v-badges-grid li.todo .v-badge-emoji { filter: grayscale(1); opacity: 0.45; }
+.v-certs { display: flex; flex-direction: column; gap: 10px; }
+.v-certs p { margin: 0; }
+.v-seg-wrap { flex-wrap: wrap; border-radius: var(--radius); align-self: flex-start; }
+.v-dates { display: flex; gap: 10px; flex-wrap: wrap; }
+.v-dates label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
+.v-cert-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.v-cert-list li { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.v-cert-list li.revoked { opacity: 0.6; }
+.v-cert-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.v-btn.small { padding: 6px 12px; font-size: 0.9rem; min-height: 0; }

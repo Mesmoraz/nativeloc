@@ -4,7 +4,7 @@ import { useSession } from '../App';
 import { ApiError } from '../api';
 import { Achievements } from './Achievements';
 import { BADGE_INFO, badgeLabel } from './badges';
-import { ReviewCard, TranslateCard, type CardResult } from './Cards';
+import { PickCard, ReviewCard, SpotCard, TranslateCard, type CardResult } from './Cards';
 import { isMock, volunteerClient, type VolunteerClient } from './client';
 import { DAILY_GOALS, type BadgeId, type Card, type DailyGoal, type SessionResponse, type StatsResponse, type VolunteerSettings, type XpTotals } from './types';
 import './volunteer.css';
@@ -126,11 +126,7 @@ export function VolunteerApp() {
 
       {screen.name === 'session' && client && (
         <main className="v-card" key={screen.cards[screen.index].id}>
-          {screen.cards[screen.index].type === 'review' ? (
-            <ReviewCard card={screen.cards[screen.index]} client={client} onDone={onCardDone} />
-          ) : (
-            <TranslateCard card={screen.cards[screen.index]} client={client} onDone={onCardDone} />
-          )}
+          <CardFor card={screen.cards[screen.index]} client={client} onDone={onCardDone} />
           {pop && <XpPop xp={pop} />}
         </main>
       )}
@@ -138,6 +134,19 @@ export function VolunteerApp() {
       {screen.name === 'summary' && <Summary cards={screen.cards} results={screen.results} stats={stats} client={client} starting={starting} onAgain={() => void start()} onDone={() => setScreen({ name: 'home' })} />}
     </div>
   );
+}
+
+function CardFor({ card, client, onDone }: { card: Card; client: VolunteerClient; onDone: (r: CardResult) => void }) {
+  switch (card.type) {
+    case 'review':
+      return <ReviewCard card={card} client={client} onDone={onDone} />;
+    case 'spot':
+      return <SpotCard card={card} client={client} onDone={onDone} />;
+    case 'pick':
+      return <PickCard card={card} client={client} onDone={onDone} />;
+    default:
+      return <TranslateCard card={card} client={client} onDone={onDone} />;
+  }
 }
 
 function Dots({ cards, results, index }: { cards: Card[]; results: CardResult[]; index: number }) {
@@ -360,7 +369,8 @@ function Summary({ cards, results, stats, client, starting, onAgain, onDone }: {
   const done = results.map((r, i) => ({ r, card: cards[i] })).filter(({ r }) => r.outcome === 'done');
   const earned: XpTotals = { accepted: 0, pending: 0 };
   for (const { r } of done) if (r.xp) earned[r.xp.status] += r.xp.points;
-  const projects = [...new Map(done.map(({ card }) => [card.project.id, card.project.name])).values()];
+  // Spot the problem is practice: it doesn't help an organization.
+  const projects = [...new Map(done.filter(({ card }) => card.type !== 'spot').map(({ card }) => [card.project.id, card.project.name])).values()];
   return (
     <>
       <main className="v-body v-summary">

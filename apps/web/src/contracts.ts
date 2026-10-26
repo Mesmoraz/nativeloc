@@ -162,6 +162,8 @@ export interface CommunityReview {
   needed: 3 | 5;
   /** 8 reviews without consensus: only Trusted and Lead reviewers see it; one Lead approval settles it. */
   escalated: boolean;
+  /** Pick the better one: how many volunteers preferred each wording, most first. Advice, not approvals. */
+  picks: { text: string; count: number }[];
 }
 /** POST /api/v1/translations/:keyId/:locale/flag { reason, note? }: Review cards' third choice. */
 export interface FlagResponse {

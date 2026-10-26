@@ -9,7 +9,7 @@ export const BADGE_INFO: Record<BadgeId, { name: string; emoji: string; how: str
   trusted: { name: 'Trusted', emoji: '🛡️', how: 'Pass the placement check, or be vouched for by an organization.' },
   lead: { name: 'Lead', emoji: '⭐', how: 'Become a lead reviewer in a language.' },
   rare_voice: { name: 'Rare voice', emoji: '🗣️', how: 'Do approved work in a language with few volunteers.' },
-  eagle_eye: { name: 'Eagle eye', emoji: '🦅', how: 'Catch 25 planted errors.', later: true },
+  eagle_eye: { name: 'Eagle eye', emoji: '🦅', how: 'Catch 25 planted errors in Spot the problem cards.' },
   first_responder: { name: 'First responder', emoji: '🚨', how: 'Translate an urgent notice that goes live within a day.', later: true },
 };
 

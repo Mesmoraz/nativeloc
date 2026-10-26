@@ -42,7 +42,7 @@ function project(orgName = `org${++n}`) {
   return Number(run(db, "INSERT INTO projects (org_id, name, source_locale, bundle_token) VALUES (?, ?, 'en', ?)", org, `p${++n}`, `bg_${n}`).lastInsertRowid);
 }
 /** An XP event, accepted at `settledAt` unless another status is given. Key ids are made up: XP has no foreign key. */
-function xp(userId: number, projectId: number, opts: { kind?: 'translate' | 'review'; locale?: string; key?: number; settledAt?: string; status?: string; createdAt?: string } = {}) {
+function xp(userId: number, projectId: number, opts: { kind?: 'translate' | 'review' | 'check' | 'pick'; locale?: string; key?: number; settledAt?: string; status?: string; createdAt?: string } = {}) {
   const status = opts.status ?? 'accepted';
   run(
     db,
@@ -304,5 +304,23 @@ describe('certificates', () => {
     expect((await pub('vc_nope')).statusCode).toBe(404);
     run(db, 'DELETE FROM users WHERE id = ?', u);
     expect((await pub(second.code)).statusCode).toBe(404);
+  });
+});
+
+describe('practice and picks', () => {
+  it("doesn't count Spot the problem toward hours or Bridge builder, and counts picks as reviews", async () => {
+    const u = await user();
+    for (let i = 0; i < 40; i++) xp(u, project(), { kind: 'check', createdAt: '2026-03-10 12:00:00', settledAt: '2026-03-10 12:00:00' });
+    awardBadges(db, u);
+    expect(held(u).bridge_builder).toBeUndefined();
+    const none = await app.inject({ method: 'POST', url: '/api/v1/volunteer/certificates', headers: as(u), payload: {} });
+    expect(none.statusCode).toBe(422);
+
+    for (let i = 0; i < 10; i++) xp(u, project(), { kind: 'pick', createdAt: '2026-03-10 12:00:00', settledAt: '2026-03-10 12:00:00' });
+    for (let i = 0; i < 10; i++) xp(u, project(), { createdAt: '2026-03-10 12:00:00', settledAt: '2026-03-10 12:00:00' });
+    awardBadges(db, u);
+    expect(held(u).bridge_builder).toBeDefined();
+    const c = (await app.inject({ method: 'POST', url: '/api/v1/volunteer/certificates', headers: as(u), payload: {} })).json();
+    expect(c).toMatchObject({ translations: 10, reviews: 10, hours: 0.5 });
   });
 });

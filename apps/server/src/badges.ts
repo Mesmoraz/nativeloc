@@ -29,6 +29,8 @@ export const RARE_DAYS = 30;
 export const BRIDGE_ORGS = 10;
 
 type Earned = { earnedAt: string; detail?: string } | null;
+/** XP kinds that are work for an organization. Spot the problem ('check') is practice, so it doesn't count here. */
+export const REAL_WORK = "('translate', 'review', 'pick')";
 const nowStamp = (now: number) => new Date(now).toISOString().slice(0, 19).replace('T', ' ');
 
 /** When the nth distinct string this person translated was accepted. */
@@ -53,7 +55,7 @@ const CHECKS: Partial<Record<BadgeId, (db: DB, userId: number, now: number) => E
       db,
       `SELECT at FROM (
          SELECT MIN(x.settled_at) AS at FROM xp_events x JOIN projects p ON p.id = x.project_id
-         WHERE x.user_id = ? AND x.status = 'accepted' GROUP BY p.org_id
+         WHERE x.user_id = ? AND x.status = 'accepted' AND x.kind IN ${REAL_WORK} GROUP BY p.org_id
        ) ORDER BY at LIMIT 1 OFFSET ?`,
       u, BRIDGE_ORGS - 1,
     );
@@ -70,7 +72,7 @@ const CHECKS: Partial<Record<BadgeId, (db: DB, userId: number, now: number) => E
       `SELECT mine.locale FROM (
          SELECT DISTINCT locale FROM volunteer_activity
          WHERE user_id = ? AND day >= ? AND (role IS NULL OR role = 'localizer')
-           AND locale IN (SELECT locale FROM xp_events WHERE user_id = ? AND status = 'accepted')
+           AND locale IN (SELECT locale FROM xp_events WHERE user_id = ? AND status = 'accepted' AND kind IN ${REAL_WORK})
        ) mine
        WHERE (SELECT COUNT(DISTINCT v.user_id) FROM volunteer_activity v
               WHERE v.locale = mine.locale AND v.day >= ? AND (v.role IS NULL OR v.role = 'localizer')) <= ?

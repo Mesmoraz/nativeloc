@@ -117,6 +117,11 @@ const stats: StatsResponse = {
   projectsHelped: [FOOD_BANK],
   streak: { current: 6, freezes: 0, activeToday: false, lastFreezeUsed: null },
   goal: { target: 5, done: 0 },
+  badges: [
+    { id: 'approved_1', detail: null, earnedAt: '2026-09-02 18:20:00', new: false },
+    { id: 'trusted', detail: null, earnedAt: '2026-09-10 17:05:00', new: false },
+    { id: 'rare_voice', detail: 'es', earnedAt: '2026-10-01 16:45:00', new: true },
+  ],
 };
 
 const wait = (ms = 350) => new Promise((r) => setTimeout(r, ms));

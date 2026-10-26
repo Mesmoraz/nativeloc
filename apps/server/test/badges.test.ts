@@ -184,3 +184,26 @@ describe('awarding badges', () => {
     expect(held(u).approved_1.new).toBe(false);
   });
 });
+
+describe('badges over HTTP', () => {
+  const stats = async (u: number) => (await app.inject({ url: '/api/v1/volunteer/stats', headers: as(u) })).json();
+  const seen = (u: number, payload: unknown) => app.inject({ method: 'POST', url: '/api/v1/volunteer/badges/seen', headers: as(u), payload: payload as object });
+
+  it('awards when stats load, and seen clears new', async () => {
+    const u = await user();
+    xp(u, project(), { settledAt: '2026-02-02 02:02:02' });
+    expect((await stats(u)).badges).toEqual([{ id: 'approved_1', detail: null, earnedAt: '2026-02-02 02:02:02', new: true }]);
+    expect((await seen(u, { ids: ['approved_1'] })).json()).toEqual({ ok: true });
+    expect((await stats(u)).badges[0].new).toBe(false);
+  });
+
+  it("refuses ids that aren't badges, and can't touch someone else's", async () => {
+    const a = await user();
+    const b = await user();
+    xp(b, project(), {});
+    await stats(b);
+    for (const body of [{}, { ids: 'approved_1' }, { ids: ['nope'] }]) expect((await seen(a, body)).statusCode).toBe(400);
+    expect((await seen(a, { ids: ['approved_1'] })).statusCode).toBe(200);
+    expect((await stats(b)).badges[0].new).toBe(true);
+  });
+});

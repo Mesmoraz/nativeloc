@@ -52,6 +52,20 @@ export interface StatsResponse {
   streak: Streak;
   /** Cards saved today (a string saved twice counts once) against the volunteer's goal. */
   goal: { target: DailyGoal; done: number };
+  /** Badges earned, oldest first. Checked for new ones on every stats load. */
+  badges: EarnedBadge[];
+}
+
+/** Server badge ids (apps/server/src/badges.ts). Names and wording are in badges.ts next to this file. */
+export type BadgeId = 'approved_1' | 'approved_100' | 'approved_1000' | 'bridge_builder' | 'trusted' | 'lead' | 'rare_voice' | 'eagle_eye' | 'first_responder';
+
+export interface EarnedBadge {
+  id: BadgeId;
+  /** The language, for rare_voice. */
+  detail: string | null;
+  earnedAt: string;
+  /** Not shown yet: celebrate once, then POST /volunteer/badges/seen. */
+  new: boolean;
 }
 
 /** The daily goal choices, in cards. */

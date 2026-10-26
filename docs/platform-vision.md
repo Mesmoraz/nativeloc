@@ -244,7 +244,8 @@ with no help from us.
 
 - Streaks, daily goal, streak freezes ([segment-3a-streaks.md](segment-3a-streaks.md)). Reminders moved to
   Segment 4, with push.
-- Badges (§4).
+- Badges (§4) and volunteer-hour certificates ([segment-3b-badges.md](segment-3b-badges.md)). *Eagle eye*
+  waits for the new card types below, and *First responder* for Segment 4's urgent lane.
 - More card types: **Pick the better one** and **Spot the problem** (gold checks in the normal queue).
 - Favorites, org-scoped Approved Reviewers, org leaderboards (opt-in), thank-you notes.
 - Team progress bars per language and per campaign.

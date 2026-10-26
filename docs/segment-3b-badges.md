@@ -4,6 +4,36 @@ Piece B of Segment 3 ([platform-vision.md](platform-vision.md) §4 and §9): bad
 quality and reach, and volunteer-hour certificates that a school or employer can check. Builds on piece A
 ([segment-3a-streaks.md](segment-3a-streaks.md)), whose activity record feeds Rare voice.
 
+## Built
+
+Where each piece lives, and what differs from the design below:
+
+- **Data:** `apps/server/src/schema/badges.ts` (both tables).
+- **Badges:** `apps/server/src/badges.ts`.
+  - `BADGES` is the catalog. `RARE_MAX`, `RARE_DAYS` and `BRIDGE_ORGS` set the thresholds.
+  - Exports `awardBadges`, `badgesOf` and `markSeen`.
+  - `stats()` in `xp.ts` awards new badges and returns them.
+- **Certificates:** `apps/server/src/certificates.ts` (`RATES`, `RATES_VERSION`, issue, list, revoke, public read).
+- **Routes:** in `routes/volunteer.ts`, including the public `GET /api/v1/certificates/:code`.
+- **Web:**
+  - `volunteer/badges.ts`: names, emoji, and how to earn each badge.
+  - `volunteer/VolunteerApp.tsx`: the "New badge" banner on Home and the summary, and the badge row on Home.
+  - `volunteer/Achievements.tsx`: the "Badges & hours" screen, a state screen inside `/v`.
+  - `certificates/`: the public `/certificate/:code` page and its print styles.
+- **Demo:** `apps/server/src/seed/badges.ts`.
+  - María's seeded streak days become accepted work, giving her a 1-hour certificate.
+  - Yuki earns Rare voice in Japanese. The streaks seed now records her activity in Japanese, not Spanish.
+- **Tests:** `apps/server/test/badges.test.ts`, 19 tests.
+- **Differences from the design:**
+  - **Rare voice is stricter.** You must also have been active in the language in the last 30 days (see the badge
+    table).
+  - **No `verifyUrl` field.** The API doesn't return one. The web app builds the link from its own address
+    (`certificateUrl` in `Achievements.tsx`), because the server's `publicUrl` can't see the online demo's
+    `/nativeloc/` base path.
+  - **"Withdraw", not "revoke".** The app says "Withdraw", which reads plainer; the API and code still say revoke.
+- **Online demo limit:** a certificate's link only opens in the browser that created it, because the demo keeps
+  its data on the visitor's device. On a real server anyone can open it.
+
 ## Decisions
 
 | # | Question | Decision | Why |
@@ -153,8 +183,8 @@ interface Certificate {
   rates: { version: string; translate: number; review: number };
   issuedAt: string;
   revokedAt: string | null;
-  verifyUrl: string;        // publicUrl + /certificate/<code>
 }
+// The verify link is /certificate/<code> on the site; the web app builds it (see Built).
 ```
 
 ## Web

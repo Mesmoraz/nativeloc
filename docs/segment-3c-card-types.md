@@ -5,6 +5,46 @@ that might contain a planted error, graded automatically) and **Pick the better 
 choose one). Builds on pieces A (activity, streaks) and B (badges, certificates): Spot the problem unlocks the
 *Eagle eye* badge.
 
+## Built
+
+Where each piece lives, and what differs from the design below:
+
+- **Ledger:** `xp_events.kind` gains `check` and `pick`. `db.ts` rebuilds the table on older databases, as it
+  does for `users` and `translations`. `badges.ts` exports `REAL_WORK`, which `certificates.ts` also uses.
+- **Spot the problem:**
+  - `apps/server/src/cards/spot.ts`: `numbersIn`, `plant`, `dealSpot`, `answerSpot`.
+  - `apps/server/src/schema/cards.ts`: the tables, plus `reviews.previous_text` and `previous_by`.
+  - `buildSession` in `pool/session.ts`: `SPOT_CHANCE`, and an `opts` argument so tests can fix the chance and
+    the random choices.
+  - `POST /api/v1/volunteer/checks/:id`.
+  - Eagle eye, in `badges.ts`.
+- **Pick the better one:**
+  - `apps/server/src/cards/pick.ts`: `pickCandidates`, `pickCard`, `savePick`, `pickTally`.
+  - `settleCommunity` in `xp.ts` settles picks before `settle()`, which would otherwise accept every pending row.
+  - `POST /api/v1/translations/:keyId/:locale/pick`.
+- **Web:**
+  - `SpotCard`, `PickCard` and `PickTally` in `volunteer/Cards.tsx`.
+  - `CardFor` in `VolunteerApp.tsx`.
+  - `Card` in `volunteer/types.ts` is now a union of `WorkCard`, `SpotCardData` and `PickCardData`.
+  - The tally appears on Review cards and on the poster's Ready to publish list.
+  - `?spot=1` in dev forces a Spot card; the server ignores it when `NODE_ENV` is `production`.
+- **Demo:** `apps/server/src/seed/cards.ts`.
+- **Tests:** `apps/server/test/cards.test.ts`, 16 tests. The badge tests gained one, and one Ready to publish
+  assertion gained `picks: []`.
+- **Differences from the design:**
+  - **`previous_by` is stored too.** The replaced wording's author isn't otherwise known, and they shouldn't get a
+    Pick card between their own text and its replacement.
+  - **Placeholders and plurals are left out of Spot cards** (any `{` in the source or translation), so the card
+    shows plain text.
+  - **Spot cards have no Skip.** Three buttons didn't fit on a 390-pixel-wide phone; the ✕ still ends the session.
+  - **The answer feedback doesn't highlight the number.** It names the change ("0100 became 0101").
+  - **Starting a new review round deletes the last round's picks,** like it deletes the reviews. They were settled
+    with that round.
+  - **The demo needed approved Spanish strings with numbers.** The design assumed the existing ones would do, but
+    those are still in review or untranslated.
+  - **Pick cards compete with Review cards on how long they've waited,** so a fresh Improve rarely makes a 5-card
+    session. The demo's Improve is dated three days back.
+
 ## Decisions
 
 | # | Question | Decision | Why |

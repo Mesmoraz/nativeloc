@@ -149,8 +149,12 @@ export function buildSession(
       add(candidates(db, s, locale, 'translate', CANDIDATES_PER_GROUP, now));
       if (reviewRight(db, s.project, s.member, locale)) {
         add(candidates(db, s, locale, 'review', CANDIDATES_PER_GROUP, now));
+        // A string that can be a Pick card is one this session, not a Review card: the pick is quick, and since it
+        // doesn't stop the volunteer reviewing it later, a later session can still bring the Review card.
+        const picks = pickCandidates(db, s.project, locale, s.member, CANDIDATES_PER_GROUP);
+        for (const r of picks) open.delete(poolKey({ type: 'review', keyId: r.key_id, locale }));
         for (const [type, rows] of [
-          ['pick', pickCandidates(db, s.project, locale, s.member, CANDIDATES_PER_GROUP)],
+          ['pick', picks],
           ['final', finalCandidates(db, s.project, locale, s.member, CANDIDATES_PER_GROUP)],
         ] as const) {
           add(
@@ -184,6 +188,8 @@ export function buildSession(
     if (top.urgent && !pick.urgent) pick = top;
     open.delete(poolKey(pick));
     dealt.add(poolKey(pick));
+    // One card per string: a string in review can also be a Pick card; whichever came first, drop the other.
+    for (const [k, c] of open) if (c.keyId === pick.keyId && c.locale === pick.locale) open.delete(k);
     picked.push(pick);
     perProject.set(pick.s.project.id, used(pick) + 1);
     // Bring in the other strings on this screenshot, which the per-group scan may not have reached.

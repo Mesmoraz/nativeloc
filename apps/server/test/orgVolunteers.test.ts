@@ -88,3 +88,73 @@ describe("the org's volunteer list", () => {
     expect(get(db, 'SELECT favorite FROM org_volunteers WHERE org_id = ? AND user_id = ?', o, v)).toEqual({ favorite: 0 });
   });
 });
+
+describe('Approved Reviewers at agreement', () => {
+  const put = (u: number, k: number, text: string) => app.inject({ method: 'PUT', url: `/api/v1/translations/${k}/xd`, headers: as(u), payload: { text } });
+  const approve = (u: number, k: number) => app.inject({ method: 'POST', url: `/api/v1/translations/${k}/xd/approve`, headers: as(u) });
+  const status = (k: number) => get<{ status: string }>(db, "SELECT status FROM translations WHERE key_id = ? AND locale = 'xd'", k)!.status;
+  const key = (p: number) => Number(run(db, 'INSERT INTO keys (project_id, name, source) VALUES (?, ?, ?)', p, `k${++n}`, `Source ${n}`).lastInsertRowid);
+  const makeAR = (o: number, u: number) => {
+    run(db, 'INSERT INTO org_volunteers (org_id, user_id, approved_reviewer) VALUES (?, ?, 1) ON CONFLICT (org_id, user_id) DO UPDATE SET approved_reviewer = 1', o, u);
+  };
+
+  /** A community project, its author, and three trusted volunteers. */
+  async function setup() {
+    const o = org();
+    const p = project(o, ['xd']);
+    const [author, a, b, c] = [await user(['xd']), await user(['xd']), await user(['xd']), await user(['xd'])];
+    return { o, p, author, a, b, c };
+  }
+
+  it("ships at agreement when an Approved Reviewer's approval is among them", async () => {
+    const { o, p, author, a, b, c } = await setup();
+    makeAR(o, b);
+    const k = key(p);
+    await put(author, k, 'Hola');
+    await approve(a, k);
+    await approve(b, k);
+    const last = await approve(c, k);
+    expect(last.json().status).toBe('approved');
+    expect(status(k)).toBe('approved');
+    expect(get(db, 'SELECT user_id FROM approvers WHERE key_id = ?', k)).toEqual({ user_id: b });
+    expect(all(db, 'SELECT user_id, via FROM publications WHERE key_id = ?', k)).toEqual([{ user_id: b, via: 'approved_reviewer' }]);
+    // XP settled as usual.
+    expect(get(db, "SELECT status FROM xp_events WHERE user_id = ? AND key_id = ? AND kind = 'translate'", author, k)).toEqual({ status: 'accepted' });
+  });
+
+  it("goes to the Ready list without one, with one who's only new, or with another org's", async () => {
+    const { o, p, author, a, b, c } = await setup();
+    const k1 = key(p);
+    await put(author, k1, 'Uno');
+    for (const v of [a, b, c]) await approve(v, k1);
+    expect(status(k1)).toBe('ready');
+
+    // An Approved Reviewer demoted to new before agreement no longer stands in.
+    makeAR(o, a);
+    const k2 = key(p);
+    await put(author, k2, 'Dos');
+    await approve(a, k2);
+    run(db, "UPDATE user_languages SET tier = 'new' WHERE user_id = ?", a);
+    for (const v of [b, c]) await approve(v, k2);
+    expect(status(k2)).toBe('ready');
+
+    // Another org's Approved Reviewer doesn't count here.
+    const elsewhere = await user(['xd']);
+    makeAR(org(), elsewhere);
+    const k3 = key(p);
+    await put(author, k3, 'Tres');
+    for (const v of [b, c, elsewhere]) await approve(v, k3);
+    expect(status(k3)).toBe('ready');
+  });
+
+  it("records the poster's click", async () => {
+    const { o, p, author, a, b, c } = await setup();
+    const admin = await user(['xd'], o, 'admin');
+    const k = key(p);
+    await put(author, k, 'Cuatro');
+    for (const v of [a, b, c]) await approve(v, k);
+    const res = await app.inject({ method: 'POST', url: `/api/v1/projects/${p}/ready/approve`, headers: as(admin), payload: {} });
+    expect(res.json()).toEqual({ approved: 1 });
+    expect(all(db, 'SELECT user_id, via FROM publications WHERE key_id = ?', k)).toEqual([{ user_id: admin, via: 'poster' }]);
+  });
+});

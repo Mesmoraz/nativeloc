@@ -78,3 +78,22 @@ export function isApprovedReviewer(db: DB, orgId: number, userId: number, locale
 /** Orgs that have made `userId` a favorite: their cards get the favorite boost (pool/score.ts). */
 export const favoriteOrgsOf = (db: DB, userId: number) =>
   new Set(all<{ org_id: number }>(db, 'SELECT org_id FROM org_volunteers WHERE user_id = ? AND favorite = 1', userId).map((r) => r.org_id));
+
+/**
+ * For staff (Segment 3's "done when": a pilot org uses Approved Reviewers instead of checking every string): per org
+ * that has Approved Reviewers, how its community text was published over the last 30 days.
+ */
+export function approvedReviewerUse(db: DB, now = Date.now()) {
+  const since = new Date(now - 30 * 86_400_000).toISOString().slice(0, 19).replace('T', ' ');
+  return all<{ id: number; name: string; via_ar: number; via_poster: number }>(
+    db,
+    `SELECT o.id, o.name,
+            COALESCE(SUM(pu.via = 'approved_reviewer'), 0) AS via_ar, COALESCE(SUM(pu.via = 'poster'), 0) AS via_poster
+     FROM orgs o
+     LEFT JOIN projects p ON p.org_id = o.id
+     LEFT JOIN publications pu ON pu.project_id = p.id AND pu.created_at >= ?
+     WHERE EXISTS (SELECT 1 FROM org_volunteers ov WHERE ov.org_id = o.id AND ov.approved_reviewer = 1)
+     GROUP BY o.id ORDER BY via_ar DESC, o.name`,
+    since,
+  ).map((r) => ({ org: { id: r.id, name: r.name }, viaApprovedReviewer: r.via_ar, viaPoster: r.via_poster }));
+}

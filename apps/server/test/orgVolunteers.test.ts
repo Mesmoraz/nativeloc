@@ -288,3 +288,22 @@ describe('thank-you notes', () => {
     expect((await stats()).messages).toEqual([]);
   });
 });
+
+describe('staff measure', () => {
+  it('splits recent publications by Approved Reviewer and poster, for orgs with Approved Reviewers', async () => {
+    const o = org('Measured Org');
+    const p = project(o, ['xd']);
+    const v = await user(['xd']);
+    makeAR(o, v);
+    const pub = (via: string, at = "datetime('now')") => run(db, `INSERT INTO publications (key_id, locale, project_id, user_id, via, created_at) VALUES (1, 'xd', ?, NULL, ?, ${at})`, p, via);
+    pub('approved_reviewer');
+    pub('approved_reviewer');
+    pub('poster');
+    pub('poster', "datetime('now', '-40 days')");
+    const staff = await user(['xd']);
+    run(db, 'UPDATE users SET is_staff = 1 WHERE id = ?', staff);
+    const res = (await app.inject({ url: '/api/v1/staff/engagement', headers: as(staff) })).json();
+    expect(res.approvedReviewers.find((r: { org: { name: string } }) => r.org.name === 'Measured Org')).toEqual({ org: { id: o, name: 'Measured Org' }, viaApprovedReviewer: 2, viaPoster: 1 });
+    expect(res.weeks).toHaveLength(8);
+  });
+});

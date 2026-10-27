@@ -22,7 +22,10 @@ export interface OrgVolunteer {
   approvedReviewer: boolean;
 }
 
-/** Volunteers with accepted work on the org's projects, not counting its own members. Most work first. */
+/**
+ * Volunteers with accepted work on the org's projects, most work first. The org's own admins and reviewers aren't
+ * listed: they already approve outright. Its localizers are, since in community review they vote like any volunteer.
+ */
 export function volunteersOf(db: DB, orgId: number): OrgVolunteer[] {
   const rows = all<{ id: number; name: string; locales: string; accepted: number; last: string; favorite: number | null; approved_reviewer: number | null }>(
     db,
@@ -30,7 +33,7 @@ export function volunteersOf(db: DB, orgId: number): OrgVolunteer[] {
      FROM xp_events x JOIN projects p ON p.id = x.project_id JOIN users u ON u.id = x.user_id
      LEFT JOIN org_volunteers ov ON ov.org_id = p.org_id AND ov.user_id = u.id
      WHERE p.org_id = ? AND x.status = 'accepted' AND x.kind IN ${REAL_WORK}
-       AND u.id NOT IN (SELECT user_id FROM memberships WHERE org_id = ?)
+       AND u.id NOT IN (SELECT user_id FROM memberships WHERE org_id = ? AND role IN ('admin', 'reviewer'))
      GROUP BY u.id ORDER BY accepted DESC, u.name`,
     orgId, orgId,
   );

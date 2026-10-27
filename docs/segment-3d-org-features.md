@@ -28,7 +28,7 @@ Reviewers instead of checking every string itself", so this piece also gives sta
 - one inbox for things orgs tell volunteers (thank-yous, "you're a favorite", "you're an Approved Reviewer")
 - XP for Final check cards
 - the staff measure of Approved Reviewer use
-- that members of the org aren't listed (they already have roles)
+- that the org's admins and reviewers aren't listed (they already approve outright)
 - where the screens live, the endpoint shapes, the demo data and the tests
 
 ## Data
@@ -147,7 +147,7 @@ CREATE INDEX IF NOT EXISTS publications_project ON publications(project_id, crea
 ## The org's side
 
 `GET /api/v1/org/volunteers` (admin of the current org) lists volunteers with accepted work on the org's
-projects, excluding the org's own members:
+projects, excluding the org's own admins and reviewers (its localizers are listed: they vote like any volunteer):
 `{ id, name, locales, tiers, accepted, lastActive, favorite, approvedReviewer }[]`, most accepted work first.
 
 `PUT /api/v1/org/volunteers/:userId` `{ favorite?, approvedReviewer? }` sets either one:

@@ -48,23 +48,24 @@ const accepted = (userId: number, projectId: number, kind = 'translate', created
   run(db, "INSERT INTO xp_events (user_id, kind, key_id, locale, project_id, points, status, created_at, settled_at) VALUES (?, ?, ?, 'xd', ?, 10, 'accepted', ?, ?)", userId, kind, ++n, projectId, createdAt, createdAt);
 
 describe("the org's volunteer list", () => {
-  it('lists volunteers with accepted work, not members, and not practice', async () => {
+  it("lists volunteers with accepted work, including the org's localizers, but not its admins or reviewers, or practice", async () => {
     const o = org();
     const p = project(o, ['xd']);
     const admin = await user(['xd'], o, 'admin');
     const a = await user(['xd']);
-    const b = await user(['xd']);
+    const localizer = await user(['xd'], o, 'localizer');
     const practice = await user(['xd']);
-    const member = await user(['xd'], o, 'localizer');
+    const reviewer = await user(['xd'], o, 'reviewer');
     accepted(a, p);
     accepted(a, p, 'review');
-    accepted(b, p, 'pick');
+    accepted(localizer, p, 'pick');
     accepted(practice, p, 'check');
-    accepted(member, p);
+    accepted(reviewer, p);
+    accepted(admin, p);
     const res = await app.inject({ url: '/api/v1/org/volunteers', headers: as(admin) });
     expect(res.json().volunteers.map((v: { id: number; accepted: number; tiers: object }) => [v.id, v.accepted, v.tiers])).toEqual([
       [a, 2, { xd: 'trusted' }],
-      [b, 1, { xd: 'trusted' }],
+      [localizer, 1, { xd: 'trusted' }],
     ]);
     expect((await app.inject({ url: '/api/v1/org/volunteers', headers: as(a) })).statusCode).toBe(403);
   });

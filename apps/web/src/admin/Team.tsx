@@ -369,9 +369,7 @@ function HelpedVolunteers({ project }: { project: Project }) {
                   <td>{v.accepted}</td>
                   <td>{shortDate(v.lastActive)}</td>
                   <td>
-                    <label className="row" style={{ gap: 6 }}>
-                      <input type="checkbox" checked={v.favorite} onChange={(e) => void set(v, { favorite: e.target.checked })} aria-label={`Favorite: ${v.name}`} />⭐
-                    </label>
+                    <input type="checkbox" checked={v.favorite} onChange={(e) => void set(v, { favorite: e.target.checked })} aria-label={`Favorite: ${v.name}`} />
                   </td>
                   <td>
                     <label className="row" style={{ gap: 6 }}>

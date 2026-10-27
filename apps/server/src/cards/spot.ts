@@ -69,6 +69,7 @@ interface Source {
   project: ProjectRow;
   org: OrgRow;
   member: Member;
+  favorite: boolean;
 }
 
 export interface DealtSpot {

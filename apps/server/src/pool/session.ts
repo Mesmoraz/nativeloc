@@ -4,6 +4,7 @@ import { isVerifiedNonprofit, openPoolRole, passesNonprofitsOnly } from './acces
 import { finalCandidates, finalCard } from '../cards/final.js';
 import { pickCandidates, pickCard } from '../cards/pick.js';
 import { dealSpot } from '../cards/spot.js';
+import { favoriteOrgsOf } from '../org/volunteers.js';
 import { hoursSince, score } from './score.js';
 
 // Shapes are the contract in apps/web/src/volunteer/types.ts (and CardOrg in apps/web/src/contracts.ts).
@@ -15,6 +16,8 @@ interface CardOrg {
   type: OrgRow['type'];
   verified: boolean;
   description: string | null;
+  /** The org made this volunteer a favorite. */
+  favorite: boolean;
 }
 interface CardBase {
   id: string;
@@ -43,6 +46,8 @@ interface Source {
   project: ProjectRow;
   org: OrgRow;
   member: Member;
+  /** The org made the volunteer a favorite: its cards get the favorite boost. */
+  favorite: boolean;
 }
 
 /** Projects a session draws from: every project in the user's orgs, plus public, approved projects anywhere that openPoolRole lets them into. */
@@ -57,6 +62,7 @@ function sources(db: DB, user: UserRow, nonprofitsOnly: boolean): Source[] {
     user.id,
   );
   const orgs = new Map<number, OrgRow>();
+  const favorites = favoriteOrgsOf(db, user.id);
   const out: Source[] = [];
   for (const project of projects) {
     const role = roles.get(project.org_id) ?? openPoolRole(db, user, project, 'translate');
@@ -65,12 +71,12 @@ function sources(db: DB, user: UserRow, nonprofitsOnly: boolean): Source[] {
     const org = orgs.get(project.org_id)!;
     if (nonprofitsOnly && !passesNonprofitsOnly(org)) continue;
     // The user as they act in this project's org: their role decides what they may review.
-    out.push({ project, org, member: { ...user, orgId: project.org_id, role } });
+    out.push({ project, org, member: { ...user, orgId: project.org_id, role }, favorite: favorites.has(org.id) });
   }
   return out;
 }
 
-const cardOrg = (org: OrgRow): CardOrg => ({ id: org.id, name: org.name, type: org.type, verified: isVerifiedNonprofit(org), description: org.description });
+const cardOrg = (org: OrgRow, favorite: boolean): CardOrg => ({ id: org.id, name: org.name, type: org.type, verified: isVerifiedNonprofit(org), description: org.description, favorite });
 
 /** Strings read per project, language and card type to score. Enough for the per-project cap plus slack. */
 const CANDIDATES_PER_GROUP = 6;
@@ -110,7 +116,7 @@ function candidates(db: DB, s: Source, locale: string, type: WorkCard['type'], l
   );
   return rows.map((r) => ({
     s, type, locale, keyId: r.id, urgent: !!r.urgent, shot: r.shot,
-    score: score({ waitedHours: hoursSince(r.since, now), urgent: !!r.urgent, priority: s.project.priority, verifiedNonprofit: isVerifiedNonprofit(s.org) }),
+    score: score({ waitedHours: hoursSince(r.since, now), urgent: !!r.urgent, priority: s.project.priority, verifiedNonprofit: isVerifiedNonprofit(s.org), favorite: s.favorite }),
   }));
 }
 
@@ -150,7 +156,7 @@ export function buildSession(
           add(
             rows.map((r) => ({
               s, type, locale, keyId: r.key_id, urgent: !!r.urgent, shot: r.shot,
-              score: score({ waitedHours: hoursSince(r.since, now), urgent: !!r.urgent, priority: s.project.priority, verifiedNonprofit: isVerifiedNonprofit(s.org) }),
+              score: score({ waitedHours: hoursSince(r.since, now), urgent: !!r.urgent, priority: s.project.priority, verifiedNonprofit: isVerifiedNonprofit(s.org), favorite: s.favorite }),
             })),
           );
         }
@@ -190,7 +196,7 @@ export function buildSession(
   const rand = opts.rand ?? Math.random;
   const cards: Card[] = picked.map(({ s, type, locale, keyId, urgent }): Card => {
     const { project, org, member } = s;
-    const base = { id: `${type}:${keyId}:${locale}`, project: projectJson(project), org: cardOrg(org), locale, urgent };
+    const base = { id: `${type}:${keyId}:${locale}`, project: projectJson(project), org: cardOrg(org, s.favorite), locale, urgent };
     if (type === 'pick') return { ...base, type, pick: pickCard(db, keyId, locale, member, rand)! };
     if (type === 'final') return { ...base, type, final: finalCard(db, keyId, locale) };
     const [item] = queue(db, project, locale, type, { viewer: member, keyId }).items;
@@ -206,7 +212,7 @@ export function buildSession(
         id: `spot:${spot.checkId}`,
         type: 'spot',
         project: projectJson(spot.source.project),
-        org: cardOrg(spot.source.org),
+        org: cardOrg(spot.source.org, spot.source.favorite),
         locale: spot.locale,
         urgent: false,
         spot: { checkId: spot.checkId, source: spot.sourceText, shown: spot.shown },

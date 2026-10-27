@@ -213,3 +213,25 @@ describe('Final check cards', () => {
     expect(status(k)).toBe('ready');
   });
 });
+
+describe('favorites', () => {
+  it("rank the starring org's work first for the favorite, and say so on the card", async () => {
+    const [oa, ob] = [org('Starring Org'), org('Other Org')];
+    const [pa, pb] = [project(oa, ['xf'], 'standard'), project(ob, ['xf'], 'standard')];
+    const adminA = await user(['xf'], oa, 'admin');
+    const v = await user(['xf']);
+    const other = await user(['xf']);
+    accepted(v, pa);
+    const ka = key(pa);
+    const kb = key(pb);
+    run(db, "UPDATE keys SET created_at = datetime('now', '-20 hours') WHERE id = ?", ka);
+    run(db, "UPDATE keys SET created_at = datetime('now', '-30 hours') WHERE id = ?", kb);
+    const first = (u: number) => buildSession(db, getUser(db, u)!, 1, false, Date.now(), { spotChance: 0 }).cards[0];
+
+    expect(first(v)).toMatchObject({ project: { id: pb }, org: { favorite: false } });
+    await app.inject({ method: 'PUT', url: `/api/v1/org/volunteers/${v}`, headers: as(adminA), payload: { favorite: true } });
+    expect(first(v)).toMatchObject({ project: { id: pa }, org: { name: 'Starring Org', favorite: true } });
+    // Someone else isn't boosted.
+    expect(first(other)).toMatchObject({ project: { id: pb }, org: { favorite: false } });
+  });
+});

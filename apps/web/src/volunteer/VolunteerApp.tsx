@@ -4,7 +4,7 @@ import { useSession } from '../App';
 import { ApiError } from '../api';
 import { Achievements } from './Achievements';
 import { BADGE_INFO, badgeLabel } from './badges';
-import { PickCard, ReviewCard, SpotCard, TranslateCard, type CardResult } from './Cards';
+import { FinalCard, PickCard, ReviewCard, SpotCard, TranslateCard, type CardResult } from './Cards';
 import { isMock, volunteerClient, type VolunteerClient } from './client';
 import { DAILY_GOALS, type BadgeId, type Card, type DailyGoal, type SessionResponse, type StatsResponse, type VolunteerSettings, type XpTotals } from './types';
 import './volunteer.css';
@@ -144,6 +144,8 @@ function CardFor({ card, client, onDone }: { card: Card; client: VolunteerClient
       return <SpotCard card={card} client={client} onDone={onDone} />;
     case 'pick':
       return <PickCard card={card} client={client} onDone={onDone} />;
+    case 'final':
+      return <FinalCard card={card} client={client} onDone={onDone} />;
     default:
       return <TranslateCard card={card} client={client} onDone={onDone} />;
   }
@@ -241,6 +243,39 @@ function NewBadges({ stats, client }: { stats: StatsResponse; client: VolunteerC
   );
 }
 
+const MESSAGE_LINE: Record<'favorite' | 'approved_reviewer', (org: string) => string> = {
+  favorite: (org) => `${org} made you a favorite. You'll see their work first.`,
+  approved_reviewer: (org) => `${org} made you an Approved Reviewer. Your approval can now publish their text.`,
+};
+
+/** What orgs told the volunteer: thank-yous, favorite, Approved Reviewer. Shown once, like new badges. */
+function Messages({ stats, client }: { stats: StatsResponse; client: VolunteerClient | null }) {
+  const ids = stats.messages.map((m) => m.id).join(',');
+  useEffect(() => {
+    if (ids && client) client.markMessagesSeen(ids.split(',').map(Number)).catch(() => {});
+  }, [ids, client]);
+  if (!stats.messages.length) return null;
+  return (
+    <div className="v-messages" role="status">
+      {stats.messages.map((m) => (
+        <div key={m.id} className="v-message">
+          <span aria-hidden>{m.kind === 'thanks' ? '💌' : m.kind === 'favorite' ? '⭐' : '✅'}</span>
+          <span>
+            {m.kind === 'thanks' ? (
+              <>
+                <b>{m.org.name}</b>
+                {m.project && m.project.name !== m.org.name ? <span className="muted"> · {m.project.name}</span> : null}: <i>{m.body}</i>
+              </>
+            ) : (
+              MESSAGE_LINE[m.kind](m.org.name)
+            )}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Earned badges in a row, and the way to all of them and to certificates. */
 function BadgeRow({ stats, onOpen }: { stats: StatsResponse; onOpen: () => void }) {
   return (
@@ -318,6 +353,7 @@ function Home({
           <p className="muted v-lead">Five short cards: translate or check a few lines of text for groups that serve people in your language.</p>
         </div>
         {stats && <NewBadges stats={stats} client={client} />}
+        {stats && <Messages stats={stats} client={client} />}
         {stats && <StreakGoal stats={stats} />}
         {stats && <BadgeRow stats={stats} onOpen={onAchievements} />}
         {stats && (

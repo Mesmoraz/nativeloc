@@ -122,6 +122,8 @@ export type ReportReason = 'spam' | 'commercial' | 'harmful';
  */
 export interface EngagementResponse {
   weeks: { start: string; active: number; returned: number; complete: boolean }[];
+  /** Orgs with Approved Reviewers: how their community text was published over the last 30 days. */
+  approvedReviewers: { org: { id: number; name: string }; viaApprovedReviewer: number; viaPoster: number }[];
 }
 /** GET /api/v1/staff/moderation: projects with moderation 'pending' (screened out, or paused by reports). */
 export interface ModerationQueueResponse {
@@ -226,6 +228,33 @@ export interface CardOrg {
   /** A verified nonprofit. */
   verified: boolean;
   description: string | null;
+  /** The org made this volunteer a favorite: its cards come first for them. */
+  favorite: boolean;
+}
+
+/**
+ * GET /api/v1/org/volunteers (org admins): volunteers with accepted work on the org's projects, not its members.
+ * PUT /api/v1/org/volunteers/:userId { favorite?, approvedReviewer? } returns one. See docs/segment-3d-org-features.md.
+ */
+export interface OrgVolunteer {
+  id: number;
+  name: string;
+  locales: string[];
+  /** An Approved Reviewer only counts where they're trusted or lead. */
+  tiers: Record<string, 'new' | 'trusted' | 'lead'>;
+  accepted: number;
+  lastActive: string;
+  favorite: boolean;
+  approvedReviewer: boolean;
+}
+
+/** GET /api/v1/projects/:id/thanks; POST { body } (up to 280 characters) returns { recipients }. */
+export interface ThanksStatus {
+  /** Volunteers with accepted work since the last thank-you. */
+  recipients: number;
+  lastSentAt: string | null;
+  /** Set when one was sent in the last day: the next one is allowed from then. */
+  nextAllowedAt: string | null;
 }
 
 // ---------- web extension points ----------

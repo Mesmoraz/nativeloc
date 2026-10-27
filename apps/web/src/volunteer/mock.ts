@@ -12,8 +12,8 @@ const LOCALE = 'es';
 const FOOD_BANK = { id: 1, name: 'Riverside Food Bank', sourceLocale: 'en' };
 const TENANTS = { id: 2, name: 'Tenant Help Line', sourceLocale: 'en' };
 const ORGS: Record<number, CardOrg> = {
-  1: { id: 11, name: 'Riverside Food Bank', type: 'nonprofit', verified: true, description: 'Groceries for 3,000 families a month' },
-  2: { id: 12, name: 'Eastside Tenants Union', type: 'small_org', verified: false, description: 'Free advice for renters' },
+  1: { id: 11, name: 'Riverside Food Bank', type: 'nonprofit', verified: true, description: 'Groceries for 3,000 families a month', favorite: true },
+  2: { id: 12, name: 'Eastside Tenants Union', type: 'small_org', verified: false, description: 'Free advice for renters', favorite: false },
 };
 
 /** A fake phone screen with one line highlighted, so the screenshot view has something real to show. */
@@ -122,6 +122,10 @@ const stats: StatsResponse = {
     { id: 'approved_1', detail: null, earnedAt: '2026-09-02 18:20:00', new: false },
     { id: 'trusted', detail: null, earnedAt: '2026-09-10 17:05:00', new: false },
     { id: 'rare_voice', detail: 'es', earnedAt: '2026-10-01 16:45:00', new: true },
+  ],
+  messages: [
+    { id: 1, kind: 'favorite', org: { id: 11, name: 'Riverside Food Bank' }, project: null, body: null, createdAt: '2026-10-20 17:00:00' },
+    { id: 2, kind: 'thanks', org: { id: 11, name: 'Riverside Food Bank' }, project: { id: 1, name: 'Riverside Food Bank' }, body: 'Thank you! Our hours page is now in Spanish.', createdAt: '2026-10-21 17:00:00' },
   ],
 };
 
@@ -250,6 +254,16 @@ export const mockClient: VolunteerClient = {
     }
     didCard();
     return { correct, planted, original: planted ? '5' : null, changed: planted ? '6' : null, xp: correct ? { points: 5, status: 'accepted' } : null };
+  },
+
+  async finalDecision(_keyId, _locale, decision) {
+    await wait();
+    didCard();
+    return { status: decision === 'publish' ? 'approved' : 'review', xp: { points: 5, status: 'accepted' } };
+  },
+
+  async markMessagesSeen(ids) {
+    stats.messages = stats.messages.filter((m) => !ids.includes(m.id));
   },
 
   async pick() {

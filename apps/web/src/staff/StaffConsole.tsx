@@ -204,10 +204,14 @@ const weekOf = (start: string) => new Date(`${start}T00:00:00Z`).toLocaleDateStr
 /** Segment 3's "done when": of the volunteers active in a week, how many came back the next week. */
 function ReturnRates() {
   const [weeks, setWeeks] = useState<EngagementResponse['weeks'] | null>(null);
+  const [approvedReviewers, setApprovedReviewers] = useState<EngagementResponse['approvedReviewers']>([]);
   const [error, setError] = useState('');
   useEffect(() => {
     api<EngagementResponse>('/api/v1/staff/engagement').then(
-      (r) => setWeeks(r.weeks),
+      (r) => {
+        setWeeks(r.weeks);
+        setApprovedReviewers(r.approvedReviewers);
+      },
       (e: Error) => setError(e.message),
     );
   }, []);
@@ -241,6 +245,29 @@ function ReturnRates() {
       <p className="small muted" style={{ marginBottom: 0 }}>
         Counts volunteers, not names. Activity as an org admin or reviewer is left out. Weeks start on Monday, in each volunteer&apos;s own time zone.
       </p>
+      {approvedReviewers.length > 0 && (
+        <>
+          <h3 style={{ margin: '20px 0 8px' }}>How orgs with Approved Reviewers publish (last 30 days)</h3>
+          <table className="list">
+            <thead>
+              <tr>
+                <th>Organization</th>
+                <th>By Approved Reviewers</th>
+                <th>By the poster</th>
+              </tr>
+            </thead>
+            <tbody>
+              {approvedReviewers.map((r) => (
+                <tr key={r.org.id}>
+                  <td>{r.org.name}</td>
+                  <td>{r.viaApprovedReviewer}</td>
+                  <td>{r.viaPoster}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
     </div>
   );
 }

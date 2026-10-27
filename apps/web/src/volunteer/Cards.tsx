@@ -6,7 +6,7 @@ import { formLabel, isEmptyModel, LengthMeter, noGrammarly, sourceExample } from
 import { languageName, nativeLanguageName, textDirection } from '../types';
 import type { VolunteerClient } from './client';
 import type { CardOrg, FlagReason, ReportReason } from '../contracts';
-import type { Card, PickCardData, SpotCardData, WorkCard, XpAward } from './types';
+import type { Card, FinalCardData, PickCardData, SpotCardData, WorkCard, XpAward } from './types';
 
 export interface CardResult {
   outcome: 'done' | 'skipped';
@@ -64,6 +64,7 @@ function OrgLine({ org }: { org: CardOrg }) {
           {org.verified ? '✓ ' : ''}
           {orgKind(org)}
         </span>
+        {org.favorite && <span className="v-org-favorite">⭐ You’re a favorite here</span>}
       </div>
       {org.description && <p className="v-org-about small muted">{org.description}</p>}
     </div>
@@ -680,6 +681,95 @@ export function PickCard({ card, client, onDone }: { card: PickCardData; client:
         <button className="v-btn ghost v-main" onClick={() => onDone({ outcome: 'skipped', xp: null })} disabled={!!busy}>
           Skip
         </button>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Final check: the org's Approved Reviewer does the poster's last step on text volunteers agreed on. Publish puts it
+ * live; Send back returns it to review with a note.
+ */
+export function FinalCard({ card, client, onDone }: { card: FinalCardData; client: VolunteerClient; onDone: (r: CardResult) => void }) {
+  const { final, locale } = card;
+  const [busy, setBusy] = useState(false);
+  const [sendingBack, setSendingBack] = useState(false);
+  const [reason, setReason] = useState('');
+  const [note, setNote] = useState('');
+  const r = final.review;
+
+  async function decide(decision: 'publish' | 'send_back') {
+    if (busy) return;
+    setBusy(true);
+    setNote('');
+    try {
+      const res = await client.finalDecision(final.keyId, locale, decision, decision === 'send_back' ? reason.trim() || undefined : undefined);
+      onDone({ outcome: 'done', xp: res.xp });
+    } catch (e) {
+      setNote(e instanceof ApiError ? e.message : 'Could not save. Check your connection and try again.');
+      setBusy(false);
+    }
+  }
+  useSubmitKey(() => void (sendingBack ? decide('send_back') : decide('publish')));
+
+  return (
+    <>
+      <div className="v-body">
+        <CardHead card={card} kind="Final check" />
+        <OrgLine org={card.org} />
+        <p className="small muted v-spot-lead">Volunteers agreed on this. As an Approved Reviewer for {card.org.name}, you can publish it for them.</p>
+        <PlainSource card={card} text={final.source} note={final.note} />
+        <section className="v-translation" dir={textDirection(locale)} lang={locale}>
+          <div className="label-row" dir="ltr">
+            {languageName(locale)} translation
+          </div>
+          <p className="v-target-text">{final.text}</p>
+          <p className="small muted" dir="ltr" style={{ margin: 0 }}>
+            {r.reviews} review{r.reviews === 1 ? '' : 's'} · {r.approvals} approval{r.approvals === 1 ? '' : 's'}
+            {r.flags ? ` · ${r.flags} flag${r.flags === 1 ? '' : 's'}` : ''}
+          </p>
+          {r.picks.length > 0 && <PickTally picks={r.picks} locale={locale} />}
+          {final.sentBack && (
+            <p className="small" dir="ltr" style={{ margin: 0 }}>
+              Sent back before: “{final.sentBack}”
+            </p>
+          )}
+        </section>
+        {sendingBack && (
+          <label className="field v-final-reason">
+            What should reviewers change? (optional)
+            <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} />
+          </label>
+        )}
+        {note && (
+          <div className="alert error" role="alert">
+            {note}
+          </div>
+        )}
+      </div>
+      <div className="v-actions">
+        {sendingBack ? (
+          <>
+            <button className="v-btn ghost" onClick={() => setSendingBack(false)} disabled={busy}>
+              Cancel
+            </button>
+            <button className="v-btn primary v-main" onClick={() => void decide('send_back')} disabled={busy}>
+              {busy ? 'Sending…' : 'Send back'}
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="v-btn ghost" onClick={() => onDone({ outcome: 'skipped', xp: null })} disabled={busy}>
+              Skip
+            </button>
+            <button className="v-btn" onClick={() => setSendingBack(true)} disabled={busy}>
+              Send back
+            </button>
+            <button className="v-btn primary v-main" onClick={() => void decide('publish')} disabled={busy}>
+              {busy ? 'Publishing…' : 'Publish'}
+            </button>
+          </>
+        )}
       </div>
     </>
   );

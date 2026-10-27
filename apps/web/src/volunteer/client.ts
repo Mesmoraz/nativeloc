@@ -23,6 +23,9 @@ export interface VolunteerClient {
   save(keyId: number, locale: string, text: string, approve: boolean): Promise<SaveResult>;
   approve(keyId: number, locale: string): Promise<ApproveResult>;
   answerSpot(checkId: number, verdict: 'ok' | 'problem'): Promise<SpotAnswer>;
+  /** Final check: publish ready text, or send it back with a note. */
+  finalDecision(keyId: number, locale: string, decision: 'publish' | 'send_back', note?: string): Promise<XpAward & { status: 'approved' | 'review' }>;
+  markMessagesSeen(ids: number[]): Promise<void>;
   /** Throws ApiError 409 when the string moved on since the card was dealt. */
   pick(keyId: number, locale: string, chosen: string, other: string): Promise<XpAward>;
   /** A Review card's third choice, on community-reviewed projects only (the card's `item.review` is set). */
@@ -52,6 +55,10 @@ const real: VolunteerClient = {
   save: (keyId, locale, text, approve) => api<SaveResult>(`/api/v1/translations/${keyId}/${locale}`, { method: 'PUT', body: { text, approve } }),
   approve: (keyId, locale) => api<ApproveResult>(`/api/v1/translations/${keyId}/${locale}/approve`, { method: 'POST' }),
   answerSpot: (checkId, verdict) => api<SpotAnswer>(`/api/v1/volunteer/checks/${checkId}`, { method: 'POST', body: { verdict } }),
+  finalDecision: (keyId, locale, decision, note) => api(`/api/v1/translations/${keyId}/${locale}/final`, { method: 'POST', body: { decision, note } }),
+  markMessagesSeen: async (ids) => {
+    await api('/api/v1/volunteer/messages/seen', { method: 'POST', body: { ids } });
+  },
   pick: (keyId, locale, chosen, other) => api<XpAward>(`/api/v1/translations/${keyId}/${locale}/pick`, { method: 'POST', body: { chosen, other } }),
   flag: (keyId, locale, reason, note) => api<FlagResponse>(`/api/v1/translations/${keyId}/${locale}/flag`, { method: 'POST', body: { reason, note } }),
   report: (projectId, keyId, reason, note) => api<ReportResponse>('/api/v1/reports', { method: 'POST', body: { projectId, keyId, reason, note } }),

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, type JoinLink, type Project, type Tier, type User } from '../api';
+import { api, ApiError, type JoinLink, type Project, type Tier, type User } from '../api';
+import type { OrgVolunteer, ThanksStatus } from '../contracts';
 import { languageName, nativeLanguageName } from '../types';
 
 export function Team({ project }: { project: Project }) {
@@ -25,6 +26,8 @@ export function Team({ project }: { project: Project }) {
 
   return (
     <div className="stack" style={{ gap: 20 }}>
+      <ThankVolunteers project={project} />
+      <HelpedVolunteers project={project} />
       <VolunteerLinks project={project} />
 
       <form className="card stack" onSubmit={create}>
@@ -308,5 +311,126 @@ function VolunteerLinks({ project }: { project: Project }) {
         );
       })}
     </div>
+  );
+}
+
+const shortDate = (stamp: string) => new Date(`${stamp.replace(' ', 'T')}Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+/**
+ * Volunteers who've done accepted work for the org (docs/segment-3d-org-features.md). ⭐ Favorite: they get the org's
+ * cards first. Approved Reviewer: on community-reviewed projects, their approval publishes without your click.
+ */
+function HelpedVolunteers({ project }: { project: Project }) {
+  const [list, setList] = useState<OrgVolunteer[] | null>(null);
+  const [error, setError] = useState('');
+  const load = useCallback(() => {
+    api<{ volunteers: OrgVolunteer[] }>('/api/v1/org/volunteers').then((r) => setList(r.volunteers), (e: Error) => setError(e.message));
+  }, []);
+  useEffect(load, [load]);
+
+  async function set(v: OrgVolunteer, patch: Partial<Pick<OrgVolunteer, 'favorite' | 'approvedReviewer'>>) {
+    try {
+      const updated = await api<OrgVolunteer>(`/api/v1/org/volunteers/${v.id}`, { method: 'PUT', body: patch });
+      setList((l) => l && l.map((x) => (x.id === v.id ? updated : x)));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not save. Try again.');
+    }
+  }
+
+  return (
+    <div className="card stack">
+      <h2 style={{ margin: 0 }}>Volunteers who’ve helped you</h2>
+      <p className="small muted" style={{ margin: 0 }}>
+        <b>⭐ Favorite:</b> they see your work first. <b>Approved Reviewer:</b> on community-reviewed projects, text they approve is published without
+        waiting for you, and they can publish what’s on your Ready list. It only counts in languages where they’re Trusted.
+      </p>
+      {error && <div className="alert error">{error}</div>}
+      {list && !list.length && <p className="muted" style={{ margin: 0 }}>Nobody yet. Volunteers show up here once their work on your projects is approved.</p>}
+      {list && list.length > 0 && (
+        <table className="list">
+          <thead>
+            <tr>
+              <th>Volunteer</th>
+              <th>Approved work</th>
+              <th>Last active</th>
+              <th>Favorite</th>
+              <th>Approved Reviewer</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((v) => {
+              const trustedIn = project.locales.filter((l) => v.tiers[l] === 'trusted' || v.tiers[l] === 'lead');
+              return (
+                <tr key={v.id}>
+                  <td>
+                    {v.name}
+                    <div className="small muted">{v.locales.map((l) => nativeLanguageName(l)).join(', ')}</div>
+                  </td>
+                  <td>{v.accepted}</td>
+                  <td>{shortDate(v.lastActive)}</td>
+                  <td>
+                    <label className="row" style={{ gap: 6 }}>
+                      <input type="checkbox" checked={v.favorite} onChange={(e) => void set(v, { favorite: e.target.checked })} aria-label={`Favorite: ${v.name}`} />⭐
+                    </label>
+                  </td>
+                  <td>
+                    <label className="row" style={{ gap: 6 }}>
+                      <input type="checkbox" checked={v.approvedReviewer} onChange={(e) => void set(v, { approvedReviewer: e.target.checked })} aria-label={`Approved Reviewer: ${v.name}`} />
+                      {v.approvedReviewer && !trustedIn.length && <span className="small muted">Not Trusted in this project’s languages yet</span>}
+                    </label>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/** One note to everyone with approved work on this project since the last one. At most once a day. */
+function ThankVolunteers({ project }: { project: Project }) {
+  const [status, setStatus] = useState<ThanksStatus | null>(null);
+  const [body, setBody] = useState(`Thank you! Thanks to you, ${project.name} can now be read in more languages.`);
+  const [sent, setSent] = useState<number | null>(null);
+  const [error, setError] = useState('');
+  const load = useCallback(() => {
+    api<ThanksStatus>(`/api/v1/projects/${project.id}/thanks`).then(setStatus, () => setStatus(null));
+  }, [project.id]);
+  useEffect(load, [load]);
+
+  async function send(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    try {
+      const r = await api<{ recipients: number }>(`/api/v1/projects/${project.id}/thanks`, { body: { body } });
+      setSent(r.recipients);
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not send. Try again.');
+    }
+  }
+
+  if (!status) return null;
+  const blocked = status.nextAllowedAt ? `You can send the next one after ${new Date(`${status.nextAllowedAt.replace(' ', 'T')}Z`).toLocaleString()}.` : !status.recipients ? 'Nobody new has worked on this project since your last thank-you.' : '';
+  return (
+    <form className="card stack" onSubmit={send}>
+      <h2 style={{ margin: 0 }}>Thank your volunteers</h2>
+      <p className="small muted" style={{ margin: 0 }}>
+        One note to everyone whose work on this project was approved since your last thank-you. They see it in the volunteer app.
+      </p>
+      <textarea rows={3} maxLength={280} value={body} onChange={(e) => setBody(e.target.value)} aria-label="Thank-you note" />
+      <div className="row" style={{ alignItems: 'center' }}>
+        <span className="small muted">{body.trim().length}/280</span>
+        <span className="spacer" />
+        {sent !== null && <span className="small">Sent to {sent} volunteer{sent === 1 ? '' : 's'} ✓</span>}
+        <button className="btn primary" type="submit" disabled={!!blocked || !body.trim()}>
+          Send to {status.recipients} volunteer{status.recipients === 1 ? '' : 's'}
+        </button>
+      </div>
+      {blocked && <p className="small muted" style={{ margin: 0 }}>{blocked}</p>}
+      {error && <div className="alert error">{error}</div>}
+    </form>
   );
 }

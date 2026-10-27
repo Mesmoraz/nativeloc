@@ -5,7 +5,8 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { hashPassword } from '../src/auth.js';
-import { addMembership, all, get, run, type DB } from '../src/db.js';
+import { addMembership, all, get, getUser, run, type DB } from '../src/db.js';
+import { buildSession } from '../src/pool/session.js';
 
 let app: FastifyInstance;
 let db: DB;
@@ -89,15 +90,14 @@ describe("the org's volunteer list", () => {
   });
 });
 
-describe('Approved Reviewers at agreement', () => {
-  const put = (u: number, k: number, text: string) => app.inject({ method: 'PUT', url: `/api/v1/translations/${k}/xd`, headers: as(u), payload: { text } });
-  const approve = (u: number, k: number) => app.inject({ method: 'POST', url: `/api/v1/translations/${k}/xd/approve`, headers: as(u) });
-  const status = (k: number) => get<{ status: string }>(db, "SELECT status FROM translations WHERE key_id = ? AND locale = 'xd'", k)!.status;
-  const key = (p: number) => Number(run(db, 'INSERT INTO keys (project_id, name, source) VALUES (?, ?, ?)', p, `k${++n}`, `Source ${n}`).lastInsertRowid);
-  const makeAR = (o: number, u: number) => {
-    run(db, 'INSERT INTO org_volunteers (org_id, user_id, approved_reviewer) VALUES (?, ?, 1) ON CONFLICT (org_id, user_id) DO UPDATE SET approved_reviewer = 1', o, u);
-  };
+const put = (u: number, k: number, text: string) => app.inject({ method: 'PUT', url: `/api/v1/translations/${k}/xd`, headers: as(u), payload: { text } });
+const approve = (u: number, k: number) => app.inject({ method: 'POST', url: `/api/v1/translations/${k}/xd/approve`, headers: as(u) });
+const status = (k: number) => get<{ status: string }>(db, "SELECT status FROM translations WHERE key_id = ? AND locale = 'xd'", k)!.status;
+const key = (p: number) => Number(run(db, 'INSERT INTO keys (project_id, name, source) VALUES (?, ?, ?)', p, `k${++n}`, `Source ${n}`).lastInsertRowid);
+const makeAR = (o: number, u: number) =>
+  run(db, 'INSERT INTO org_volunteers (org_id, user_id, approved_reviewer) VALUES (?, ?, 1) ON CONFLICT (org_id, user_id) DO UPDATE SET approved_reviewer = 1', o, u);
 
+describe('Approved Reviewers at agreement', () => {
   /** A community project, its author, and three trusted volunteers. */
   async function setup() {
     const o = org();
@@ -156,5 +156,60 @@ describe('Approved Reviewers at agreement', () => {
     const res = await app.inject({ method: 'POST', url: `/api/v1/projects/${p}/ready/approve`, headers: as(admin), payload: {} });
     expect(res.json()).toEqual({ approved: 1 });
     expect(all(db, 'SELECT user_id, via FROM publications WHERE key_id = ?', k)).toEqual([{ user_id: admin, via: 'poster' }]);
+  });
+});
+
+describe('Final check cards', () => {
+  /** A community string on the Ready list, written by `author`, with `ar` as the org's Approved Reviewer. */
+  async function readyString() {
+    const o = org();
+    const p = project(o, ['xd']);
+    const [author, a, b, c, ar] = [await user(['xd']), await user(['xd']), await user(['xd']), await user(['xd']), await user(['xd'])];
+    const k = key(p);
+    await put(author, k, 'Listo');
+    for (const v of [a, b, c]) await approve(v, k);
+    expect(status(k)).toBe('ready');
+    makeAR(o, ar);
+    return { o, p, k, author, a, ar };
+  }
+  const finals = (u: number) => buildSession(db, getUser(db, u)!, 5, false, Date.now(), { spotChance: 0 }).cards.filter((c) => c.type === 'final');
+  const decide = (u: number, k: number, decision: string, note?: string) =>
+    app.inject({ method: 'POST', url: `/api/v1/translations/${k}/xd/final`, headers: as(u), payload: { decision, note } });
+
+  it('is dealt only to the Approved Reviewer, for ready text they did not write', async () => {
+    const { k, author, a, ar, o } = await readyString();
+    const cards = finals(ar);
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ id: `final:${k}:xd`, final: { keyId: k, text: 'Listo', review: { approvals: 3 } } });
+    expect(finals(a)).toEqual([]);
+    makeAR(o, author);
+    expect(finals(author)).toEqual([]);
+  });
+
+  it('publishes, with credit and XP', async () => {
+    const { k, ar } = await readyString();
+    const res = await decide(ar, k, 'publish');
+    expect(res.json()).toEqual({ status: 'approved', xp: { points: 5, status: 'accepted' } });
+    expect(status(k)).toBe('approved');
+    expect(all(db, 'SELECT user_id, via FROM publications WHERE key_id = ?', k)).toEqual([{ user_id: ar, via: 'approved_reviewer' }]);
+    expect(get(db, 'SELECT 1 AS y FROM approvers WHERE key_id = ? AND user_id = ?', k, ar)).toEqual({ y: 1 });
+    expect(get<{ n: number }>(db, "SELECT COUNT(*) AS n FROM volunteer_activity WHERE user_id = ? AND key_id = ?", ar, k)!.n).toBe(1);
+    expect((await decide(ar, k, 'publish')).statusCode).toBe(409);
+  });
+
+  it('sends back with a note', async () => {
+    const { k, ar } = await readyString();
+    expect((await decide(ar, k, 'send_back', 'Use "usted"')).json().status).toBe('review');
+    expect(status(k)).toBe('review');
+    expect(get(db, "SELECT note FROM reviews WHERE key_id = ? AND kind = 'send_back'", k)).toEqual({ note: 'Use "usted"' });
+  });
+
+  it("refuses anyone else, and bad decisions", async () => {
+    const { k, a, author, o, ar } = await readyString();
+    expect((await decide(a, k, 'publish')).statusCode).toBe(403);
+    makeAR(o, author);
+    expect((await decide(author, k, 'publish')).statusCode).toBe(403);
+    expect((await decide(ar, k, 'maybe')).statusCode).toBe(400);
+    expect(status(k)).toBe('ready');
   });
 });

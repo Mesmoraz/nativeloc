@@ -1,6 +1,7 @@
 import { all, getOrg, type DB, type Member, type OrgRow, type ProjectRow, type Role, type UserRow } from '../db.js';
 import { projectLocales, queue, reviewFilter, reviewRight } from '../services.js';
 import { isVerifiedNonprofit, openPoolRole, passesNonprofitsOnly } from './access.js';
+import { finalCandidates, finalCard } from '../cards/final.js';
 import { pickCandidates, pickCard } from '../cards/pick.js';
 import { dealSpot } from '../cards/spot.js';
 import { hoursSince, score } from './score.js';
@@ -28,7 +29,9 @@ type WorkCard = CardBase & { type: 'translate' | 'review'; item: Item };
 type SpotCard = CardBase & { type: 'spot'; spot: { checkId: number; source: string; shown: string } };
 /** Pick the better one (cards/pick.ts): two wordings of a string in community review, in random order. */
 type PickCard = CardBase & { type: 'pick'; pick: { keyId: number; source: string; note: string | null; a: string; b: string } };
-type Card = WorkCard | SpotCard | PickCard;
+/** Final check (cards/final.ts): an Approved Reviewer publishes, or sends back, text on the org's Ready list. */
+type FinalCard = CardBase & { type: 'final'; final: ReturnType<typeof finalCard> };
+type Card = WorkCard | SpotCard | PickCard | FinalCard;
 
 /** Chance a session includes a Spot the problem card (docs/segment-3c-card-types.md). */
 export const SPOT_CHANCE = 1 / 3;
@@ -77,7 +80,7 @@ const MAX_PER_PROJECT = 2;
 /** A string a volunteer could get a card for, with its score (see pool/score.ts). */
 interface Scored {
   s: Source;
-  type: WorkCard['type'] | 'pick';
+  type: WorkCard['type'] | 'pick' | 'final';
   locale: string;
   keyId: number;
   urgent: boolean;
@@ -140,12 +143,17 @@ export function buildSession(
       add(candidates(db, s, locale, 'translate', CANDIDATES_PER_GROUP, now));
       if (reviewRight(db, s.project, s.member, locale)) {
         add(candidates(db, s, locale, 'review', CANDIDATES_PER_GROUP, now));
-        add(
-          pickCandidates(db, s.project, locale, s.member, CANDIDATES_PER_GROUP).map((r) => ({
-            s, type: 'pick' as const, locale, keyId: r.key_id, urgent: !!r.urgent, shot: r.shot,
-            score: score({ waitedHours: hoursSince(r.since, now), urgent: !!r.urgent, priority: s.project.priority, verifiedNonprofit: isVerifiedNonprofit(s.org) }),
-          })),
-        );
+        for (const [type, rows] of [
+          ['pick', pickCandidates(db, s.project, locale, s.member, CANDIDATES_PER_GROUP)],
+          ['final', finalCandidates(db, s.project, locale, s.member, CANDIDATES_PER_GROUP)],
+        ] as const) {
+          add(
+            rows.map((r) => ({
+              s, type, locale, keyId: r.key_id, urgent: !!r.urgent, shot: r.shot,
+              score: score({ waitedHours: hoursSince(r.since, now), urgent: !!r.urgent, priority: s.project.priority, verifiedNonprofit: isVerifiedNonprofit(s.org) }),
+            })),
+          );
+        }
       }
     }
   }
@@ -161,8 +169,8 @@ export function buildSession(
     const fresh = all.filter((c) => used(c) < MAX_PER_PROJECT);
     const pool = fresh.length ? fresh : all;
     const want: WorkCard['type'] = picked.length % 2 === 0 ? 'translate' : 'review';
-    // A Pick card takes a Review slot.
-    const ofType = pool.filter((c) => c.type === want || (want === 'review' && c.type === 'pick'));
+    // Pick and Final check cards take Review slots.
+    const ofType = pool.filter((c) => c.type === want || (want === 'review' && (c.type === 'pick' || c.type === 'final')));
     // Keep a screenshot's strings together: prefer one that shares a screenshot with a card of this type already dealt.
     const together = ofType.filter((c) => c.shot != null && picked.some((p) => p.type === c.type && p.s.project.id === c.s.project.id && p.shot === c.shot));
     let pick = best(together) ?? best(ofType) ?? best(pool)!;
@@ -173,7 +181,7 @@ export function buildSession(
     picked.push(pick);
     perProject.set(pick.s.project.id, used(pick) + 1);
     // Bring in the other strings on this screenshot, which the per-group scan may not have reached.
-    if (pick.shot != null && pick.type !== 'pick' && used(pick) < MAX_PER_PROJECT) {
+    if (pick.shot != null && (pick.type === 'translate' || pick.type === 'review') && used(pick) < MAX_PER_PROJECT) {
       add(candidates(db, pick.s, pick.locale, pick.type, MAX_PER_PROJECT + 1, now, pick.shot).filter((c) => !dealt.has(poolKey(c))));
     }
   }
@@ -184,6 +192,7 @@ export function buildSession(
     const { project, org, member } = s;
     const base = { id: `${type}:${keyId}:${locale}`, project: projectJson(project), org: cardOrg(org), locale, urgent };
     if (type === 'pick') return { ...base, type, pick: pickCard(db, keyId, locale, member, rand)! };
+    if (type === 'final') return { ...base, type, final: finalCard(db, keyId, locale) };
     const [item] = queue(db, project, locale, type, { viewer: member, keyId }).items;
     return { ...base, type, item };
   });

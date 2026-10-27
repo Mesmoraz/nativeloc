@@ -415,8 +415,12 @@ export function run(db: DB, sql: string, ...params: Param[]) {
   return db.prepare(sql).run(...params);
 }
 
+const inTx = new WeakSet<DB>();
+/** Runs `fn` in a transaction. Inside another tx it joins that one, so an error anywhere rolls back the whole. */
 export function tx<T>(db: DB, fn: () => T): T {
+  if (inTx.has(db)) return fn();
   db.exec('BEGIN');
+  inTx.add(db);
   try {
     const out = fn();
     db.exec('COMMIT');
@@ -424,6 +428,8 @@ export function tx<T>(db: DB, fn: () => T): T {
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
+  } finally {
+    inTx.delete(db);
   }
 }
 

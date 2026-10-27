@@ -4,6 +4,7 @@ import { get, run, type DB } from '../db.js';
 import { BADGE_IDS, markSeen, type BadgeId } from '../badges.js';
 import { certificatesOf, issueCertificate, publicCertificate, revokeCertificate } from '../certificates.js';
 import { answerSpot } from '../cards/spot.js';
+import { markMessagesSeen } from '../org/messages.js';
 import { buildSession } from '../pool/session.js';
 import { DAILY_GOALS, dailyGoalOf, type DailyGoal } from '../streaks.js';
 import { stats } from '../xp.js';
@@ -54,6 +55,15 @@ export function volunteerRoutes(app: FastifyInstance, db: DB) {
   app.get('/api/v1/volunteer/stats', async (req) => {
     const { user } = requireUser(db, req);
     return stats(db, user.id);
+  });
+
+  // The app showed these messages from orgs (org/messages.ts).
+  app.post<{ Body: { ids?: unknown } }>('/api/v1/volunteer/messages/seen', async (req) => {
+    const { user } = requireUser(db, req);
+    const ids = req.body?.ids;
+    if (!Array.isArray(ids) || !ids.every((id) => Number.isInteger(id))) throw new HttpError(400, 'ids must be a list of message ids.');
+    markMessagesSeen(db, user.id, ids as number[]);
+    return { ok: true };
   });
 
   // The app showed these badges, so they're no longer new.

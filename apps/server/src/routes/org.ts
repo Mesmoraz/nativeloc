@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../app.js';
-import { requireMember } from '../auth.js';
+import { HttpError, projectAccess, requireMember } from '../auth.js';
+import { sendThanks, thanksStatus } from '../org/thanks.js';
 import { setVolunteer, volunteersOf } from '../org/volunteers.js';
 import { intParam } from '../util.js';
 
@@ -14,5 +15,13 @@ export function orgRoutes(app: FastifyInstance, { db }: RouteDeps) {
   app.put<{ Params: { userId: string }; Body: { favorite?: unknown; approvedReviewer?: unknown } }>('/api/v1/org/volunteers/:userId', async (req) => {
     const { member } = requireMember(db, req, ['admin']);
     return setVolunteer(db, member.orgId, member.id, intParam(req.params.userId), req.body ?? {});
+  });
+
+  // Thank-you notes on a project (org/thanks.ts): who would get one, and sending it. Org admins.
+  app.get<{ Params: { id: string } }>('/api/v1/projects/:id/thanks', async (req) => thanksStatus(db, projectAccess(db, req, intParam(req.params.id), 'admin').project));
+  app.post<{ Params: { id: string }; Body: { body?: unknown } }>('/api/v1/projects/:id/thanks', async (req) => {
+    const { project, member } = projectAccess(db, req, intParam(req.params.id), 'admin');
+    if (!member) throw new HttpError(403, 'Sign in as an admin of this organization.');
+    return sendThanks(db, project, member.id, req.body?.body);
   });
 }

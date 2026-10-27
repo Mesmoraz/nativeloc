@@ -235,3 +235,56 @@ describe('favorites', () => {
     expect(first(other)).toMatchObject({ project: { id: pb }, org: { favorite: false } });
   });
 });
+
+describe('thank-you notes', () => {
+  it("go to volunteers since the last one, not to the org's admins and reviewers, or for practice", async () => {
+    const o = org('Thankful Org');
+    const p = project(o, ['xd']);
+    const admin = await user(['xd'], o, 'admin');
+    const rev = await user(['xd'], o, 'reviewer');
+    const loc = await user(['xd'], o, 'localizer');
+    const [a, b, practice] = [await user(['xd']), await user(['xd']), await user(['xd'])];
+    for (const u of [a, rev, loc]) accepted(u, p, 'translate', '2026-10-01 10:00:00');
+    accepted(practice, p, 'check');
+    const status = async () => (await app.inject({ url: `/api/v1/projects/${p}/thanks`, headers: as(admin) })).json();
+    const send = (body: unknown, who = admin) => app.inject({ method: 'POST', url: `/api/v1/projects/${p}/thanks`, headers: as(who), payload: { body } });
+
+    expect(await status()).toEqual({ recipients: 2, lastSentAt: null, nextAllowedAt: null });
+    for (const bad of ['', '   ', 'x'.repeat(281)]) expect((await send(bad)).statusCode).toBe(400);
+    // Admin routes tell non-members the project doesn't exist, as elsewhere.
+    expect((await send('Thanks!', a)).statusCode).toBe(404);
+    expect((await send('  Thank you all!  ')).json()).toEqual({ recipients: 2 });
+    const msgs = all<{ user_id: number; body: string; kind: string }>(db, 'SELECT user_id, body, kind FROM volunteer_messages WHERE project_id = ? ORDER BY user_id', p);
+    expect(msgs).toEqual([
+      { user_id: loc, body: 'Thank you all!', kind: 'thanks' },
+      { user_id: a, body: 'Thank you all!', kind: 'thanks' },
+    ].sort((x, y) => x.user_id - y.user_id));
+
+    expect((await send('Again!')).statusCode).toBe(429);
+    run(db, "UPDATE thank_yous SET created_at = datetime('now', '-2 days') WHERE project_id = ?", p);
+    expect((await send('Nobody new')).statusCode).toBe(409);
+    accepted(b, p, 'pick', new Date().toISOString().slice(0, 19).replace('T', ' '));
+    expect((await send('Welcome, b!')).json()).toEqual({ recipients: 1 });
+  });
+
+  it('reach the volunteer through stats, once', async () => {
+    const o = org('Inbox Org');
+    const p = project(o, ['xd']);
+    const admin = await user(['xd'], o, 'admin');
+    const v = await user(['xd']);
+    accepted(v, p);
+    await app.inject({ method: 'PUT', url: `/api/v1/org/volunteers/${v}`, headers: as(admin), payload: { favorite: true } });
+    await app.inject({ method: 'POST', url: `/api/v1/projects/${p}/thanks`, headers: as(admin), payload: { body: 'Gracias' } });
+    const stats = async () => (await app.inject({ url: '/api/v1/volunteer/stats', headers: as(v) })).json();
+    const { messages } = await stats();
+    expect(messages.map((m: { kind: string; org: { name: string }; body: string | null }) => [m.kind, m.org.name, m.body])).toEqual([
+      ['favorite', 'Inbox Org', null],
+      ['thanks', 'Inbox Org', 'Gracias'],
+    ]);
+    expect(messages[1].project).toMatchObject({ id: p });
+    const seen = (ids: unknown) => app.inject({ method: 'POST', url: '/api/v1/volunteer/messages/seen', headers: as(v), payload: { ids } });
+    expect((await seen('all')).statusCode).toBe(400);
+    expect((await seen(messages.map((m: { id: number }) => m.id))).json()).toEqual({ ok: true });
+    expect((await stats()).messages).toEqual([]);
+  });
+});

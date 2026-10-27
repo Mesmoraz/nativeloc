@@ -4,6 +4,38 @@ Piece D of Segment 3 ([platform-vision.md](platform-vision.md) §5 and §9): way
 and trust the volunteers who work on its content. Segment 3 is done when "at least one pilot org uses Approved
 Reviewers instead of checking every string itself", so this piece also gives staff a way to see that happening.
 
+## Built
+
+Where each piece lives, and what differs from the design below:
+
+- **Data:** `apps/server/src/schema/orgVolunteers.ts` (all four tables).
+- **Favorites and Approved Reviewers:** `apps/server/src/org/volunteers.ts`, with `volunteersOf`, `setVolunteer`,
+  `isApprovedReviewer`, `favoriteOrgsOf` and `approvedReviewerUse`. Routes in `routes/org.ts`.
+- **Agreement and the poster's click:** in `services/review.ts`. `makeReady` checks for an Approved Reviewer and
+  returns the status it set. `publishReady` takes `by` and records `publications`.
+- **Final check:** `apps/server/src/cards/final.ts`, plus `POST .../final` in `routes/localize.ts`.
+- **Favorites in sessions:** `WEIGHTS.favorite` in `pool/score.ts`. `Source.favorite` in `pool/session.ts`.
+- **Thank-yous and the inbox:** `org/thanks.ts`, `org/messages.ts`, and `stats().messages`.
+- **Staff:** `approvedReviewers` in `GET /staff/engagement`, shown in the Return rates tab.
+- **Web:**
+  - `FinalCard`, and the ⭐ in `OrgLine`, in `Cards.tsx`.
+  - `Messages` in `VolunteerApp.tsx`.
+  - `HelpedVolunteers` and `ThankVolunteers` in `admin/Team.tsx`.
+- **Demo:** `apps/server/src/seed/orgVolunteers.ts`.
+- **Tests:** `apps/server/test/orgVolunteers.test.ts`, 13 tests. One `pool.test.ts` assertion gained
+  `favorite: false`. `cards.test.ts` gained a one-card-per-string test.
+- **Differences from the design:**
+  - **The org's localizers are listed and can be appointed.** Only its admins and reviewers are left out. Every
+    demo volunteer is an org localizer, and in community review they vote like anyone else.
+  - **`tx` now joins an outer transaction** instead of failing on a nested `BEGIN`. A Final check publishes or sends
+    back, and books XP, in one transaction.
+  - **Fixed: one card per string per session.** A string in review that someone Improved could be dealt twice in
+    one session, as a Review card and as a Pick card. Now the Pick card takes its place that session. A pick
+    doesn't stop the volunteer reviewing it later.
+  - **Final check cards compete for Review slots on waiting time,** like Pick cards. In the demo, the Ready-list
+    strings are dated two days back.
+  - **Non-members get 404 on the thank-you routes,** as on other admin routes, not 403.
+
 ## Decisions
 
 | # | Question | Decision | Why |

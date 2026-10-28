@@ -2,6 +2,7 @@ import { displayKey, validateTranslation, type Issue } from '@nativeloc/core';
 import { HttpError } from '../auth.js';
 import { all, get, run, tx, type DB, type KeyRow, type Member, type ProjectRow, type TranslationRow } from '../db.js';
 import { fileReport } from '../moderation/reports.js';
+import { afterApproved } from '../campaigns.js';
 import { pickTally, type PickTally } from '../cards/pick.js';
 import { recordActivity } from '../streaks.js';
 import { isApprovedReviewer } from '../org/volunteers.js';
@@ -143,6 +144,8 @@ function makeReady(db: DB, project: ProjectRow, t: TranslationRow): 'ready' | 'a
     recordPublication(db, project, t.key_id, t.locale, stand.user_id, 'approved_reviewer');
   }
   settleCommunity(db, ref(project, t.key_id, t.locale), t.text);
+  // After XP settles: a launch tells the volunteers with accepted work (campaigns.ts).
+  if (stand) afterApproved(db, project.id, t.locale);
   return status;
 }
 
@@ -241,6 +244,8 @@ export function saveTranslation(db: DB, project: ProjectRow, user: Member, keyId
     const s = ref(project, keyId, locale);
     const xp = community ? onCommunitySave(db, user.id, s, status, text) : onSave(db, user.id, s, status);
     recordActivity(db, user, 'translate', s);
+    // After XP settles: a launch tells the volunteers with accepted work (campaigns.ts).
+    if (status === 'approved') afterApproved(db, project.id, locale);
     return { status, issues, xp, ...(community ? { review: reviewOf(db, keyId, locale) } : {}) };
   });
 }
@@ -263,6 +268,7 @@ export function approveTranslation(db: DB, project: ProjectRow, user: Member, ke
       run(db, "UPDATE translations SET status = 'approved', updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE key_id = ? AND locale = ?", user.id, keyId, locale);
       recordApprover(db, keyId, locale, user.id);
       settleCommunity(db, s, t.text);
+      afterApproved(db, project.id, locale);
       recordActivity(db, user, 'review', s);
       return { status: 'approved' as const, review: reviewOf(db, keyId, locale), xp: null };
     });
@@ -275,6 +281,7 @@ export function approveTranslation(db: DB, project: ProjectRow, user: Member, ke
       // Reviewing is staff's job, so no XP for them. A volunteer lead's review of someone else's work earns XP.
       const xp = onApprove(db, user.id, s, user.role === 'localizer' && t.status === 'review' && t.updated_by !== user.id);
       recordActivity(db, user, 'review', s);
+      afterApproved(db, project.id, locale);
       return { status: 'approved' as const, xp };
     });
   }
@@ -289,6 +296,7 @@ export function approveTranslation(db: DB, project: ProjectRow, user: Member, ke
     // Approving twice is one vote, and earns once.
     const xp = voted ? onVote(db, user.id, s, status === 'approved') : null;
     recordActivity(db, user, 'review', s);
+    if (status === 'approved') afterApproved(db, project.id, locale);
     return { status, approvals: { count, needed: project.peer_approvals }, xp };
   });
 }
@@ -332,6 +340,7 @@ export function publishReady(db: DB, project: ProjectRow, items?: { keyId: numbe
       if (wanted && !wanted.has(`${r.key_id}:${r.locale}`)) continue;
       run(db, "UPDATE translations SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE key_id = ? AND locale = ?", r.key_id, r.locale);
       recordPublication(db, project, r.key_id, r.locale, by.userId, by.via);
+      afterApproved(db, project.id, r.locale);
       approved++;
     }
     return { approved };

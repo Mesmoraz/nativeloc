@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../app.js';
 import { HttpError, projectAccess, requireMember } from '../auth.js';
 import { sendThanks, thanksStatus } from '../org/thanks.js';
+import { cancelCampaign, createCampaign, projectCampaigns } from '../campaigns.js';
 import { setVolunteer, volunteersOf } from '../org/volunteers.js';
 import { intParam } from '../util.js';
 
@@ -24,4 +25,13 @@ export function orgRoutes(app: FastifyInstance, { db }: RouteDeps) {
     if (!member) throw new HttpError(403, 'Sign in as an admin of this organization.');
     return sendThanks(db, project, member.id, req.body?.body);
   });
+
+  // Campaigns on a project (campaigns.ts). Org admins.
+  app.get<{ Params: { id: string } }>('/api/v1/projects/:id/campaign', async (req) => projectCampaigns(db, projectAccess(db, req, intParam(req.params.id), 'admin').project.id));
+  app.post<{ Params: { id: string }; Body: { name?: unknown; locales?: unknown; deadline?: unknown } }>('/api/v1/projects/:id/campaign', async (req) => {
+    const { project, member } = projectAccess(db, req, intParam(req.params.id), 'admin');
+    if (!member) throw new HttpError(403, 'Sign in as an admin of this organization.');
+    return createCampaign(db, project, member.id, req.body ?? {});
+  });
+  app.delete<{ Params: { id: string } }>('/api/v1/projects/:id/campaign', async (req) => cancelCampaign(db, projectAccess(db, req, intParam(req.params.id), 'admin').project.id));
 }

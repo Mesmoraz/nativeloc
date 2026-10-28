@@ -67,3 +67,76 @@ describe('schema', () => {
     db2.close();
   });
 });
+
+const tomorrow = () => new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+const inDays = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString().slice(0, 10);
+const put = (u: number, k: number, locale: string, text: string, approve = false) =>
+  app.inject({ method: 'PUT', url: `/api/v1/translations/${k}/${locale}`, headers: as(u), payload: { text, approve } });
+const approve = (u: number, k: number, locale: string) => app.inject({ method: 'POST', url: `/api/v1/translations/${k}/${locale}/approve`, headers: as(u) });
+
+describe('campaigns', () => {
+  /** A standard project in xa and xb with two strings, its admin and reviewer, and two volunteers. */
+  async function setup() {
+    const o = org('Campaign Org');
+    const p = project(o, ['xa', 'xb'], 'Hours page');
+    const [admin, rev] = [await user(['xa', 'xb'], o, 'admin'), await user(['xa', 'xb'], o, 'reviewer')];
+    const [v1, v2] = [await user(['xa', 'xb']), await user(['xa', 'xb'], o, 'localizer')];
+    const [k1, k2] = [key(p), key(p)];
+    const create = (body: object, who = admin) => app.inject({ method: 'POST', url: `/api/v1/projects/${p}/campaign`, headers: as(who), payload: body });
+    const view = async () => (await app.inject({ url: `/api/v1/projects/${p}/campaign`, headers: as(admin) })).json();
+    return { o, p, admin, rev, v1, v2, k1, k2, create, view };
+  }
+
+  it('validates, allows one at a time, and can be cancelled', async () => {
+    const { p, create, admin, v1, view } = await setup();
+    const today = new Date().toISOString().slice(0, 10);
+    for (const body of [{ locales: [], deadline: tomorrow() }, { locales: ['zz'], deadline: tomorrow() }, { locales: ['xa'], deadline: today }, { locales: ['xa'], deadline: '2026-02-30' }]) {
+      expect((await create(body)).statusCode).toBe(400);
+    }
+    expect((await create({ locales: ['xa'], deadline: tomorrow() }, v1)).statusCode).toBe(404);
+    const c = (await create({ locales: ['xa', 'xa'], deadline: tomorrow() })).json();
+    expect(c).toMatchObject({ name: 'Get Hours page live', daysLeft: 1, endedAt: null, locales: [{ locale: 'xa', total: 2, approved: 0, ready: 0, launchedAt: null }] });
+    expect((await create({ locales: ['xb'], deadline: tomorrow() })).statusCode).toBe(409);
+    const cancelled = await app.inject({ method: 'DELETE', url: `/api/v1/projects/${p}/campaign`, headers: as(admin) });
+    expect(cancelled.json()).toMatchObject({ endedReason: 'cancelled' });
+    expect((await view()).active).toBeNull();
+    expect((await create({ name: '  Spring push ', locales: ['xb'], deadline: inDays(3) })).json()).toMatchObject({ name: 'Spring push', daysLeft: 3 });
+  });
+
+  it('launches a language at 100%, tells the volunteers who worked on it, and ends when all have', async () => {
+    const { o, create, rev, v1, v2, k1, k2, view } = await setup();
+    await create({ locales: ['xa', 'xb'], deadline: inDays(5) });
+    await put(v1, k1, 'xa', 'Uno');
+    expect((await approve(rev, k1, 'xa')).statusCode).toBe(200);
+    expect((await view()).active.locales[0]).toMatchObject({ locale: 'xa', approved: 1, launchedAt: null });
+    await put(v2, k2, 'xa', 'Dos');
+    await approve(rev, k2, 'xa');
+    const after = (await view()).active;
+    expect(after.locales[0].launchedAt).toBeTruthy();
+    expect(after.endedAt).toBeNull();
+    const launches = all<{ user_id: number; body: string }>(db, "SELECT user_id, body FROM volunteer_messages WHERE kind = 'launch' AND org_id = ? ORDER BY user_id", o);
+    expect(launches).toEqual([v1, v2].sort((a, b) => a - b).map((u) => ({ user_id: u, body: 'xa' })));
+
+    // A reviewer saving with approve is another way in.
+    await put(rev, k1, 'xb', 'Uno', true);
+    await put(rev, k2, 'xb', 'Dos', true);
+    const done = (await view());
+    expect(done.active).toBeNull();
+    expect(done.past[0]).toMatchObject({ endedReason: 'launched' });
+    // The reviewer did the xb work: no launch message to them, or anyone, for xb.
+    expect(get<{ n: number }>(db, "SELECT COUNT(*) AS n FROM volunteer_messages WHERE kind = 'launch' AND body = 'xb' AND org_id = ?", o)!.n).toBe(0);
+  });
+
+  it('ends quietly at the deadline, and refuses a language that is already done', async () => {
+    const { p, create, view, rev, k1, k2 } = await setup();
+    await create({ locales: ['xa'], deadline: tomorrow() });
+    run(db, "UPDATE campaigns SET deadline = date('now', '-1 day') WHERE project_id = ?", p);
+    const v = await view();
+    expect(v.active).toBeNull();
+    expect(v.past[0]).toMatchObject({ endedReason: 'deadline', locales: [{ approved: 0, total: 2 }] });
+
+    await put(rev, k1, 'xb', 'Uno', true);
+    await put(rev, k2, 'xb', 'Dos', true);
+    expect((await create({ locales: ['xb'], deadline: tomorrow() })).statusCode).toBe(400);
+  });
+});

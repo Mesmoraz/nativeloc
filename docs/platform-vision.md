@@ -249,13 +249,16 @@ with no help from us.
 - More card types: **Pick the better one** and **Spot the problem** (gold checks in the normal queue)
   ([segment-3c-card-types.md](segment-3c-card-types.md)).
 - Favorites, org-scoped Approved Reviewers and thank-you notes
-  ([segment-3d-org-features.md](segment-3d-org-features.md)), and org leaderboards (opt-in). Campaigns (and
-  thanking by campaign) come with the campaign progress bars below.
-- Team progress bars per language and per campaign.
+  ([segment-3d-org-features.md](segment-3d-org-features.md)), and org leaderboards (opt-in, below).
+- Team progress bars per language and per campaign, campaigns and org leaderboards
+  ([segment-3e-campaigns-leaderboards.md](segment-3e-campaigns-leaderboards.md)).
 - Volunteer-hour certificates.
 
 **Done when:** we see week-over-week return rates for volunteers, and at least one pilot org uses
 Approved Reviewers instead of checking every string itself.
+
+**Status:** every feature above is built (pieces A–E). The "done when" needs real use: staff see both measures
+in the Staff Console's Return rates tab.
 
 ### Segment 4: Native apps
 

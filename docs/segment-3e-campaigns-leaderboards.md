@@ -8,6 +8,38 @@ Piece E of Segment 3 ([platform-vision.md](platform-vision.md) §4, §5 and §9)
 
 Leagues stay in Segment 4.
 
+## Built
+
+Where each piece lives, and what differs from the design below:
+
+- **Data:** `apps/server/src/schema/campaigns.ts`, with the tables, the `volunteer_messages` rebuild and the
+  leaderboard opt-in column. Piece D's `CREATE TABLE` gained `'launch'` for new databases.
+- **Campaigns:** `apps/server/src/campaigns.ts`.
+  - `afterApproved` runs at each of the six approval points in `services/review.ts`.
+  - Routes are in `routes/org.ts`.
+  - `campaignsFor` feeds the stats route.
+- **Sessions:**
+  - `campaignBoost` in `pool/score.ts`.
+  - `Source.campaign`, and each card's `campaign` line, in `pool/session.ts`. `sources` is now exported.
+- **Leaderboards:** `apps/server/src/leaderboards.ts`. Routes are in `routes/org.ts` and `routes/volunteer.ts`;
+  `showOnLeaderboards` is in the volunteer settings.
+- **Web:**
+  - `CampaignCard` in `admin/Overview.tsx`; `TopTranslators` in `admin/Team.tsx`.
+  - `Campaigns` and the launch message in `VolunteerApp.tsx`; the card line in `CardHead`.
+  - `Leaderboards` in `Achievements.tsx`.
+- **Demo:** `apps/server/src/seed/campaigns.ts`.
+- **Tests:** `apps/server/test/campaigns.test.ts`, 10 tests. Settings assertions in `streaks.test.ts` and
+  `pool.test.ts` gained `showOnLeaderboards`.
+- **Differences from the design:**
+  - **Launches run after XP settles.** At first the launch check ran before some paths settled XP, so the
+    volunteer whose string finished the language wasn't told. Now every path checks after XP settles.
+  - **`daysLeft` is calendar days** (due tomorrow is 1, due today is 0), not hours rounded up.
+  - **Campaigns are added in the stats route, not in `stats()`.** `xp.ts` importing the session code made an
+    import cycle, and the `services.ts` re-exports weren't ready when the routes loaded, which broke 84 tests.
+  - **A language that's already fully translated can't be put in a campaign** (400). It would launch the moment
+    the campaign started.
+  - **The past campaign in the demo is written directly,** because it's history.
+
 ## Decisions
 
 | # | Question | Decision | Why |

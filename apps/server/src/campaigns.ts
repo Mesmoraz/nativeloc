@@ -148,3 +148,34 @@ export function projectCampaigns(db: DB, projectId: number, now = Date.now()) {
   const views = rows.map((r) => campaignView(db, r, now));
   return { active: views.find((v) => !v.endedAt) ?? null, past: views.filter((v) => v.endedAt).slice(0, 10) };
 }
+
+/**
+ * The volunteer's side (stats): running campaigns in projects they can draw from, in their languages, and a bar per
+ * language summing those campaigns. A language with no campaign gets no bar: a bar needs a finish line.
+ */
+export function campaignsFor(
+  db: DB,
+  sources: { project: { id: number; name: string }; org: { id: number; name: string }; campaign: { row: CampaignRow } | null }[],
+  locales: string[],
+  now = Date.now(),
+) {
+  const campaigns: { id: number; name: string; project: { id: number; name: string }; org: { id: number; name: string }; deadline: string; daysLeft: number; locales: { locale: string; total: number; approved: number; launched: boolean }[] }[] = [];
+  for (const s of sources) {
+    if (!s.campaign) continue;
+    // Catches deadlines and imported text, as reading it does for the org's admins.
+    tx(db, () => refreshCampaign(db, s.campaign!.row, now));
+    const row = get<CampaignRow>(db, 'SELECT * FROM campaigns WHERE id = ?', s.campaign.row.id)!;
+    if (row.ended_at) continue;
+    const v = campaignView(db, row, now);
+    const mine = v.locales.filter((l) => locales.includes(l.locale)).map(({ locale, total, approved, launchedAt }) => ({ locale, total, approved, launched: !!launchedAt }));
+    if (!mine.length) continue;
+    campaigns.push({ id: v.id, name: v.name, project: { id: s.project.id, name: s.project.name }, org: { id: s.org.id, name: s.org.name }, deadline: v.deadline, daysLeft: v.daysLeft, locales: mine });
+  }
+  const languageBars = locales
+    .map((locale) => {
+      const parts = campaigns.flatMap((c) => c.locales.filter((l) => l.locale === locale));
+      return { locale, campaigns: parts.length, total: parts.reduce((n, l) => n + l.total, 0), approved: parts.reduce((n, l) => n + l.approved, 0) };
+    })
+    .filter((b) => b.campaigns > 0);
+  return { campaigns, languageBars };
+}

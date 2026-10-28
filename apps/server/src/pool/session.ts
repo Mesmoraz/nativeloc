@@ -56,7 +56,7 @@ interface Source {
 }
 
 /** Projects a session draws from: every project in the user's orgs, plus public, approved projects anywhere that openPoolRole lets them into. */
-function sources(db: DB, user: UserRow, nonprofitsOnly: boolean): Source[] {
+export function sources(db: DB, user: UserRow, nonprofitsOnly: boolean): Source[] {
   const roles = new Map(all<{ org_id: number; role: Role }>(db, 'SELECT org_id, role FROM memberships WHERE user_id = ?', user.id).map((m) => [m.org_id, m.role]));
   // The visibility/moderation test here only narrows the scan; openPoolRole decides who gets in.
   const projects = all<ProjectRow>(

@@ -189,6 +189,7 @@ export function stats(db: DB, userId: number, now = Date.now()) {
     badges: badgesOf(db, userId),
     /** What orgs told the volunteer (thank-yous, favorite, Approved Reviewer), not shown yet. */
     messages: messagesOf(db, userId),
+
     approvedStrings: get<{ n: number }>(
       db,
       "SELECT COUNT(*) AS n FROM (SELECT DISTINCT key_id, locale FROM xp_events WHERE user_id = ? AND kind = 'translate' AND status = 'accepted')",

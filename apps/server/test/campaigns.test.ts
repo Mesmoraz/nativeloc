@@ -168,3 +168,27 @@ describe('the deadline boost', () => {
     expect(first()).toMatchObject({ project: { id: inCampaign }, campaign: { name: 'Get Campaign page live', daysLeft: 1, approved: 0, total: 1 } });
   });
 });
+
+describe('campaigns in volunteer stats', () => {
+  it('lists running campaigns in the volunteer’s languages, with a bar per language', async () => {
+    const o = org('Stats Org');
+    const admin = await user(['xs', 'xt'], o, 'admin');
+    const [p1, p2] = [project(o, ['xs', 'xt'], 'Flyer'), project(o, ['xs'], 'Site')];
+    key(p1);
+    key(p1);
+    key(p2);
+    const rev = await user(['xs'], o, 'reviewer');
+    const k = key(p2);
+    await put(rev, k, 'xs', 'Hecho', true);
+    for (const [p, locales] of [[p1, ['xs', 'xt']], [p2, ['xs']]] as const) {
+      await app.inject({ method: 'POST', url: `/api/v1/projects/${p}/campaign`, headers: as(admin), payload: { locales, deadline: inDays(4) } });
+    }
+    const v = await user(['xs']);
+    const stats = (await app.inject({ url: '/api/v1/volunteer/stats', headers: as(v) })).json();
+    expect(stats.campaigns.map((c: { name: string; daysLeft: number; locales: unknown[] }) => [c.name, c.daysLeft, c.locales])).toEqual([
+      ['Get Flyer live', 4, [{ locale: 'xs', total: 2, approved: 0, launched: false }]],
+      ['Get Site live', 4, [{ locale: 'xs', total: 2, approved: 1, launched: false }]],
+    ]);
+    expect(stats.languageBars).toEqual([{ locale: 'xs', campaigns: 2, total: 4, approved: 1 }]);
+  });
+});

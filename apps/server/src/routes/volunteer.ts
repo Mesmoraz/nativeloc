@@ -5,7 +5,8 @@ import { BADGE_IDS, markSeen, type BadgeId } from '../badges.js';
 import { certificatesOf, issueCertificate, publicCertificate, revokeCertificate } from '../certificates.js';
 import { answerSpot } from '../cards/spot.js';
 import { markMessagesSeen } from '../org/messages.js';
-import { buildSession } from '../pool/session.js';
+import { buildSession, sources } from '../pool/session.js';
+import { campaignsFor } from '../campaigns.js';
 import { DAILY_GOALS, dailyGoalOf, type DailyGoal } from '../streaks.js';
 import { stats } from '../xp.js';
 
@@ -54,7 +55,8 @@ export function volunteerRoutes(app: FastifyInstance, db: DB) {
 
   app.get('/api/v1/volunteer/stats', async (req) => {
     const { user } = requireUser(db, req);
-    return stats(db, user.id);
+    // Campaigns are added here, not in stats(): xp.ts can't import the session code without an import cycle.
+    return { ...stats(db, user.id), ...campaignsFor(db, sources(db, user, false), JSON.parse(user.locales) as string[]) };
   });
 
   // The app showed these messages from orgs (org/messages.ts).

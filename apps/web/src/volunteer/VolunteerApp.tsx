@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSession } from '../App';
+import { languageName, nativeLanguageName } from '../types';
 import { ApiError } from '../api';
 import { Achievements } from './Achievements';
 import { BADGE_INFO, badgeLabel } from './badges';
@@ -247,6 +248,7 @@ const MESSAGE_LINE: Record<'favorite' | 'approved_reviewer', (org: string) => st
   favorite: (org) => `${org} made you a favorite. You'll see their work first.`,
   approved_reviewer: (org) => `${org} made you an Approved Reviewer. Your approval can now publish their text.`,
 };
+const MESSAGE_ICON = { thanks: '💌', favorite: '⭐', approved_reviewer: '✅', launch: '🎉' } as const;
 
 /** What orgs told the volunteer: thank-yous, favorite, Approved Reviewer. Shown once, like new badges. */
 function Messages({ stats, client }: { stats: StatsResponse; client: VolunteerClient | null }) {
@@ -259,9 +261,13 @@ function Messages({ stats, client }: { stats: StatsResponse; client: VolunteerCl
     <div className="v-messages" role="status">
       {stats.messages.map((m) => (
         <div key={m.id} className="v-message">
-          <span aria-hidden>{m.kind === 'thanks' ? '💌' : m.kind === 'favorite' ? '⭐' : '✅'}</span>
+          <span aria-hidden>{MESSAGE_ICON[m.kind]}</span>
           <span>
-            {m.kind === 'thanks' ? (
+            {m.kind === 'launch' ? (
+              <>
+                <b>{m.project?.name ?? m.org.name}</b> is live in {languageName(m.body ?? '')}! You helped make it happen.
+              </>
+            ) : m.kind === 'thanks' ? (
               <>
                 <b>{m.org.name}</b>
                 {m.project && m.project.name !== m.org.name ? <span className="muted"> · {m.project.name}</span> : null}: <i>{m.body}</i>
@@ -272,6 +278,56 @@ function Messages({ stats, client }: { stats: StatsResponse; client: VolunteerCl
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+const pct = (approved: number, total: number) => (total ? Math.round((approved / total) * 100) : 0);
+const daysLeftText = (d: number) => (d === 0 ? 'last day' : d === 1 ? '1 day left' : `${d} days left`);
+
+/** Running campaigns in the volunteer's languages: a shared bar each, and one per language when there are several. */
+function Campaigns({ stats }: { stats: StatsResponse }) {
+  if (!stats.campaigns.length) return null;
+  return (
+    <div className="v-campaigns">
+      <div className="label-row">🏁 Campaigns</div>
+      {stats.languageBars
+        .filter((b) => b.campaigns > 1)
+        .map((b) => (
+          <div key={b.locale} className="v-campaign">
+            <div className="v-campaign-head">
+              <b>{nativeLanguageName(b.locale)}</b>
+              <span className="small muted">
+                {b.approved} of {b.total} strings · {b.campaigns} campaigns
+              </span>
+            </div>
+            <Bar value={pct(b.approved, b.total)} />
+          </div>
+        ))}
+      {stats.campaigns.flatMap((c) =>
+        c.locales.map((l) => (
+          <div key={`${c.id}:${l.locale}`} className="v-campaign">
+            <div className="v-campaign-head">
+              <span>
+                <b>{c.name}</b> <span className="small muted">· {c.org.name}</span>
+              </span>
+              <span className="small muted">{l.launched ? 'Launched 🎉' : daysLeftText(c.daysLeft)}</span>
+            </div>
+            <Bar value={pct(l.approved, l.total)} />
+            <span className="small muted">
+              {nativeLanguageName(l.locale)}: {l.approved} of {l.total} strings live
+            </span>
+          </div>
+        )),
+      )}
+    </div>
+  );
+}
+
+function Bar({ value }: { value: number }) {
+  return (
+    <div className="v-goal-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={value}>
+      <span style={{ width: `${value}%` }} />
     </div>
   );
 }
@@ -355,6 +411,7 @@ function Home({
         {stats && <NewBadges stats={stats} client={client} />}
         {stats && <Messages stats={stats} client={client} />}
         {stats && <StreakGoal stats={stats} />}
+        {stats && <Campaigns stats={stats} />}
         {stats && <BadgeRow stats={stats} onOpen={onAchievements} />}
         {stats && (
           <div className="v-stats">

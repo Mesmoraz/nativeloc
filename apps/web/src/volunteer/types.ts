@@ -1,7 +1,7 @@
 // The volunteer card flow's API shapes. The server (apps/server/src/routes/volunteer.ts) returns these
 // shapes and the web app consumes them. See docs/segment-1-volunteer-cards.md. Change both sides together.
 import type { QueueItem } from '../api';
-import type { CardOrg, CommunityReview } from '../contracts';
+import type { CardOrg, CommunityReview, Leaderboard } from '../contracts';
 
 export type CardType = 'translate' | 'review' | 'spot' | 'pick' | 'final';
 
@@ -16,6 +16,8 @@ interface CardBase {
   locale: string;
   /** Urgent strings come first in a session. */
   urgent?: boolean;
+  /** The project's campaign, when it covers this language and hasn't launched it yet. */
+  campaign?: { name: string; daysLeft: number; approved: number; total: number } | null;
 }
 
 /** Translate or review a real string. `item` is the same shape the full editor's queue returns. */
@@ -54,10 +56,10 @@ export type Card = WorkCard | SpotCardData | PickCardData | FinalCardData;
 /** Something an org told the volunteer, shown once on the home screen (then POST /volunteer/messages/seen). */
 export interface VolunteerMessage {
   id: number;
-  kind: 'thanks' | 'favorite' | 'approved_reviewer';
+  kind: 'thanks' | 'favorite' | 'approved_reviewer' | 'launch';
   org: { id: number; name: string };
   project: { id: number; name: string } | null;
-  /** The note, for thanks. */
+  /** The note, for thanks; the language, for launch. */
   body: string | null;
   createdAt: string;
 }
@@ -83,6 +85,15 @@ export interface SessionResponse {
 export interface VolunteerSettings {
   nonprofitsOnly: boolean;
   dailyGoal: DailyGoal;
+  /** Off until the volunteer opts in: only then are they named on org leaderboards. */
+  showOnLeaderboards: boolean;
+}
+
+/** GET /api/v1/volunteer/leaderboards: this month's board for each org you've translated for. */
+export interface VolunteerBoard extends Leaderboard {
+  org: { id: number; name: string };
+  /** Your words and place among those named; null until you opt in. */
+  you: { words: number; place: number | null } | null;
 }
 
 export interface XpTotals {
@@ -108,6 +119,18 @@ export interface StatsResponse {
   badges: EarnedBadge[];
   /** Messages from orgs not shown yet, oldest first. */
   messages: VolunteerMessage[];
+  /** Running campaigns in the volunteer's languages. */
+  campaigns: {
+    id: number;
+    name: string;
+    project: { id: number; name: string };
+    org: { id: number; name: string };
+    deadline: string;
+    daysLeft: number;
+    locales: { locale: string; total: number; approved: number; launched: boolean }[];
+  }[];
+  /** One bar per language with campaigns, summing them. */
+  languageBars: { locale: string; campaigns: number; total: number; approved: number }[];
 }
 
 /** Server badge ids (apps/server/src/badges.ts). Names and wording are in badges.ts next to this file. */

@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, type Project } from '../api';
+import { api, ApiError, type Project } from '../api';
 import { ProgressBar } from '../components';
 import { languageName, nativeLanguageName } from '../types';
-import type { ManifestQuality } from '../contracts';
+import type { CampaignView, ManifestQuality } from '../contracts';
 
 export interface Manifest {
   version: number;
@@ -48,6 +48,7 @@ export function Overview({ project, manifest, reload }: { project: Project; mani
 
   return (
     <div className="stack" style={{ gap: 20 }}>
+      <CampaignCard project={project} />
       <div className="card stack">
         <div className="row">
           <h2 style={{ margin: 0 }}>Languages</h2>
@@ -239,6 +240,128 @@ function WebsitePreview({ project, saveSettings, reload }: { project: Project; s
             </button>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+const longDate = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const ENDED: Record<NonNullable<CampaignView['endedReason']>, string> = { launched: 'Launched 🎉', deadline: 'Deadline passed', cancelled: 'Ended early' };
+
+/**
+ * A campaign: get this project live in some languages by a date (docs/segment-3e-campaigns-leaderboards.md).
+ * Volunteers see a shared bar, its cards rise in the last three days, and a language that reaches 100% launches.
+ */
+function CampaignCard({ project }: { project: Project }) {
+  const [data, setData] = useState<{ active: CampaignView | null; past: CampaignView[] } | null>(null);
+  const [form, setForm] = useState({ name: '', locales: [] as string[], deadline: '' });
+  const [error, setError] = useState('');
+  const load = useCallback(() => {
+    api<{ active: CampaignView | null; past: CampaignView[] }>(`/api/v1/projects/${project.id}/campaign`).then(setData, () => setData(null));
+  }, [project.id]);
+  useEffect(load, [load]);
+  const targets = project.locales.filter((l) => l !== project.sourceLocale);
+
+  async function start(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    try {
+      await api(`/api/v1/projects/${project.id}/campaign`, { body: form });
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not start the campaign.');
+    }
+  }
+  async function cancel() {
+    if (!window.confirm('End this campaign now? Volunteers stop seeing it.')) return;
+    await api(`/api/v1/projects/${project.id}/campaign`, { method: 'DELETE' });
+    load();
+  }
+
+  if (!data) return null;
+  const c = data.active;
+  return (
+    <div className="card stack">
+      <div className="row">
+        <h2 style={{ margin: 0 }}>Campaign</h2>
+        <span className="spacer" />
+        {c && (
+          <span className="small muted">
+            Due {longDate(c.deadline)} · {c.daysLeft === 0 ? 'last day' : `${c.daysLeft} day${c.daysLeft === 1 ? '' : 's'} left`}
+          </span>
+        )}
+      </div>
+      {c ? (
+        <>
+          <b>{c.name}</b>
+          {c.locales.map((l) => (
+            <div key={l.locale} className="stack" style={{ gap: 4 }}>
+              <div className="row small">
+                <span>{nativeLanguageName(l.locale)}</span>
+                <span className="spacer" />
+                <span className="muted">
+                  {l.launchedAt ? 'Launched 🎉' : `${l.approved} of ${l.total} live${l.ready ? ` · ${l.ready} ready for your click` : ''}`}
+                </span>
+              </div>
+              <div className="v-goal-bar" style={{ height: 10, borderRadius: 999, background: 'var(--border)', overflow: 'hidden' }}>
+                <span style={{ display: 'block', height: '100%', width: `${l.total ? (l.approved / l.total) * 100 : 0}%`, background: 'var(--accent)' }} />
+              </div>
+            </div>
+          ))}
+          <div className="row">
+            <span className="small muted">Volunteers see this bar, and its strings rise in their sessions over the last three days.</span>
+            <span className="spacer" />
+            <button className="btn ghost" onClick={() => void cancel()}>
+              End campaign
+            </button>
+          </div>
+        </>
+      ) : (
+        <form className="stack" onSubmit={start}>
+          <p className="small muted" style={{ margin: 0 }}>
+            Give volunteers a finish line: “Get {project.name} live in Spanish by Friday.” Everyone who helped hears when it launches.
+          </p>
+          <div className="row" style={{ alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <label className="field" style={{ flex: 1, minWidth: 200 }}>
+              Name (optional)
+              <input value={form.name} placeholder={`Get ${project.name} live`} onChange={(e) => setForm({ ...form, name: e.target.value })} maxLength={80} />
+            </label>
+            <label className="field">
+              Deadline
+              <input type="date" required value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
+            </label>
+          </div>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            {targets.map((l) => (
+              <label key={l} className="row" style={{ gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={form.locales.includes(l)}
+                  onChange={(e) => setForm({ ...form, locales: e.target.checked ? [...form.locales, l] : form.locales.filter((x) => x !== l) })}
+                />
+                {nativeLanguageName(l)}
+              </label>
+            ))}
+            <span className="spacer" />
+            <button className="btn primary" type="submit" disabled={!form.locales.length || !form.deadline}>
+              Start campaign
+            </button>
+          </div>
+          {error && <div className="alert error">{error}</div>}
+        </form>
+      )}
+      {data.past.length > 0 && (
+        <details>
+          <summary className="small muted">Past campaigns</summary>
+          <ul className="small">
+            {data.past.map((p) => (
+              <li key={p.id}>
+                {p.name} · {ENDED[p.endedReason!]} ·{' '}
+                {p.locales.map((l) => `${nativeLanguageName(l.locale)} ${l.total ? Math.round((l.approved / l.total) * 100) : 0}%`).join(', ')}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </div>
   );

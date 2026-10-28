@@ -2,7 +2,7 @@
 // without the server; production builds never load it.
 import { api } from '../api';
 import type { FlagReason, FlagResponse, ReportReason, ReportResponse } from '../contracts';
-import type { BadgeId, Certificate, DailyGoal, SessionResponse, SpotAnswer, StatsResponse, VolunteerSettings, XpAward } from './types';
+import type { BadgeId, Certificate, DailyGoal, VolunteerBoard, SessionResponse, SpotAnswer, StatsResponse, VolunteerSettings, XpAward } from './types';
 
 export type SaveResult = { status: 'approved' | 'review' } & XpAward;
 export type ApproveResult = { status: 'approved' | 'review'; approvals?: { count: number; needed: number } } & XpAward;
@@ -14,6 +14,8 @@ export interface VolunteerClient {
   settings(): Promise<VolunteerSettings>;
   setNonprofitsOnly(on: boolean): Promise<VolunteerSettings>;
   setDailyGoal(goal: DailyGoal): Promise<VolunteerSettings>;
+  setShowOnLeaderboards(on: boolean): Promise<VolunteerSettings>;
+  leaderboards(): Promise<VolunteerBoard[]>;
   markBadgesSeen(ids: BadgeId[]): Promise<void>;
   certificates(): Promise<Certificate[]>;
   /** Dates are YYYY-MM-DD; omitted `from` is "from the start", omitted `to` is today. Throws ApiError 422 under half an hour. */
@@ -46,6 +48,8 @@ const real: VolunteerClient = {
   settings: () => api<VolunteerSettings>('/api/v1/volunteer/settings'),
   setNonprofitsOnly: (on) => api<VolunteerSettings>('/api/v1/volunteer/settings', { method: 'PUT', body: { nonprofitsOnly: on } }),
   setDailyGoal: (goal) => api<VolunteerSettings>('/api/v1/volunteer/settings', { method: 'PUT', body: { dailyGoal: goal } }),
+  setShowOnLeaderboards: (on) => api<VolunteerSettings>('/api/v1/volunteer/settings', { method: 'PUT', body: { showOnLeaderboards: on } }),
+  leaderboards: async () => (await api<{ boards: VolunteerBoard[] }>('/api/v1/volunteer/leaderboards')).boards,
   markBadgesSeen: async (ids) => {
     await api('/api/v1/volunteer/badges/seen', { method: 'POST', body: { ids } });
   },

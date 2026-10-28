@@ -5,7 +5,9 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { hashPassword } from '../src/auth.js';
-import { addMembership, all, get, openDb, run, type DB } from '../src/db.js';
+import { deadlineBoost } from '../src/campaigns.js';
+import { addMembership, all, get, getUser, openDb, run, type DB } from '../src/db.js';
+import { buildSession } from '../src/pool/session.js';
 
 let app: FastifyInstance;
 let db: DB;
@@ -138,5 +140,31 @@ describe('campaigns', () => {
     await put(rev, k1, 'xb', 'Uno', true);
     await put(rev, k2, 'xb', 'Dos', true);
     expect((await create({ locales: ['xb'], deadline: tomorrow() })).statusCode).toBe(400);
+  });
+});
+
+describe('the deadline boost', () => {
+  it('rises from 0 to 72 hours over the last three days', () => {
+    const end = Date.parse('2026-11-10T00:00:00Z') + 86_400_000;
+    const at = (hoursLeft: number) => deadlineBoost('2026-11-10', end - hoursLeft * 3_600_000);
+    expect(at(96)).toBe(0);
+    expect(at(72)).toBe(0);
+    expect(at(36)).toBe(36);
+    expect(at(0.001)).toBeCloseTo(72, 2);
+    expect(at(-1)).toBe(0);
+  });
+
+  it("lifts a campaign's cards above otherwise equal ones, and puts the campaign on the card", async () => {
+    const o = org('Boost Org');
+    const admin = await user(['xc'], o, 'admin');
+    const [inCampaign, other] = [project(o, ['xc'], 'Campaign page'), project(o, ['xc'], 'Other page')];
+    const [k1, k2] = [key(inCampaign), key(other)];
+    run(db, "UPDATE keys SET created_at = datetime('now', '-10 hours') WHERE id = ?", k1);
+    run(db, "UPDATE keys SET created_at = datetime('now', '-30 hours') WHERE id = ?", k2);
+    const v = await user(['xc']);
+    const first = () => buildSession(db, getUser(db, v)!, 1, false, Date.now(), { spotChance: 0 }).cards[0];
+    expect(first()).toMatchObject({ project: { id: other }, campaign: null });
+    await app.inject({ method: 'POST', url: `/api/v1/projects/${inCampaign}/campaign`, headers: as(admin), payload: { locales: ['xc'], deadline: tomorrow() } });
+    expect(first()).toMatchObject({ project: { id: inCampaign }, campaign: { name: 'Get Campaign page live', daysLeft: 1, approved: 0, total: 1 } });
   });
 });

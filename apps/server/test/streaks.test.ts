@@ -259,9 +259,9 @@ describe('settings and time zone', () => {
   });
 
   it('has a daily goal that defaults to 5 and saves without touching the filter', async () => {
-    expect((await settings('fay')).json()).toEqual({ nonprofitsOnly: false, dailyGoal: 5 });
-    expect((await settings('fay', { dailyGoal: 10 })).json()).toEqual({ nonprofitsOnly: false, dailyGoal: 10 });
-    expect((await settings('fay', { nonprofitsOnly: true })).json()).toEqual({ nonprofitsOnly: true, dailyGoal: 10 });
+    expect((await settings('fay')).json()).toEqual({ nonprofitsOnly: false, dailyGoal: 5, showOnLeaderboards: false });
+    expect((await settings('fay', { dailyGoal: 10 })).json()).toEqual({ nonprofitsOnly: false, dailyGoal: 10, showOnLeaderboards: false });
+    expect((await settings('fay', { nonprofitsOnly: true })).json()).toEqual({ nonprofitsOnly: true, dailyGoal: 10, showOnLeaderboards: false });
     const s = await app.inject({ url: '/api/v1/volunteer/stats', headers: as('fay') });
     expect(s.json().goal.target).toBe(10);
   });

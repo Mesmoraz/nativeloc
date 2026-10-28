@@ -3,6 +3,7 @@ import type { RouteDeps } from '../app.js';
 import { HttpError, projectAccess, requireMember } from '../auth.js';
 import { sendThanks, thanksStatus } from '../org/thanks.js';
 import { cancelCampaign, createCampaign, projectCampaigns } from '../campaigns.js';
+import { boardMonth, leaderboard } from '../leaderboards.js';
 import { setVolunteer, volunteersOf } from '../org/volunteers.js';
 import { intParam } from '../util.js';
 
@@ -16,6 +17,12 @@ export function orgRoutes(app: FastifyInstance, { db }: RouteDeps) {
   app.put<{ Params: { userId: string }; Body: { favorite?: unknown; approvedReviewer?: unknown } }>('/api/v1/org/volunteers/:userId', async (req) => {
     const { member } = requireMember(db, req, ['admin']);
     return setVolunteer(db, member.orgId, member.id, intParam(req.params.userId), req.body ?? {});
+  });
+
+  // The org's leaderboard (leaderboards.ts): this month or last.
+  app.get<{ Querystring: { month?: string } }>('/api/v1/org/leaderboard', async (req) => {
+    const { member } = requireMember(db, req, ['admin']);
+    return leaderboard(db, member.orgId, boardMonth(req.query.month));
   });
 
   // Thank-you notes on a project (org/thanks.ts): who would get one, and sending it. Org admins.

@@ -192,3 +192,65 @@ describe('campaigns in volunteer stats', () => {
     expect(stats.languageBars).toEqual([{ locale: 'xs', campaigns: 2, total: 4, approved: 1 }]);
   });
 });
+
+describe('leaderboards', () => {
+  const thisMonth = () => new Date().toISOString().slice(0, 7);
+  /** `n` accepted translations of `source` by `u`, accepted at `at`. */
+  const translated = (u: number, p: number, source: string, at = new Date().toISOString().slice(0, 19).replace('T', ' '), n = 1) => {
+    for (let i = 0; i < n; i++) {
+      const k = key(p, source);
+      run(db, "INSERT INTO xp_events (user_id, kind, key_id, locale, project_id, points, status, created_at, settled_at) VALUES (?, 'translate', ?, 'xl', ?, 10, 'accepted', ?, ?)", u, k, p, at, at);
+    }
+  };
+  const optIn = (u: number) => app.inject({ method: 'PUT', url: '/api/v1/volunteer/settings', headers: as(u), payload: { showOnLeaderboards: true } });
+
+  it('ranks opted-in volunteers by accepted words this month, and counts everyone else', async () => {
+    const o = org('Board Org');
+    const p = project(o, ['xl']);
+    const admin = await user(['xl'], o, 'admin');
+    const rev = await user(['xl'], o, 'reviewer');
+    const maria = await user(['xl'], undefined, 'localizer', 'María López Pérez');
+    const sam = await user(['xl'], undefined, 'localizer', 'Sam Rivera');
+    const shy = await user(['xl'], undefined, 'localizer', 'Shy Person');
+    const mono = await user(['xl'], undefined, 'localizer', 'Cher');
+    translated(maria, p, 'Open Monday to Friday', undefined, 2); // 8 words
+    translated(sam, p, 'Call us for delivery today please'); // 6
+    translated(shy, p, 'Lots and lots of words here, really many'); // 8
+    translated(mono, p, 'Hi'); // 1
+    translated(sam, p, 'Last month only words here', '2020-01-01 00:00:00');
+    translated(rev, p, 'Reviewers are not ranked at all here');
+    for (const u of [maria, sam, mono]) await optIn(u);
+    const board = (await app.inject({ url: '/api/v1/org/leaderboard', headers: as(admin) })).json();
+    expect(board).toEqual({
+      month: thisMonth(),
+      top: [
+        { name: 'María P.', words: 8 },
+        { name: 'Sam R.', words: 6 },
+        { name: 'Cher', words: 1 },
+      ],
+      others: 1,
+      totalWords: 23,
+    });
+    expect((await app.inject({ url: '/api/v1/org/leaderboard?month=2020-01', headers: as(admin) })).statusCode).toBe(400);
+    expect((await app.inject({ url: '/api/v1/org/leaderboard', headers: as(maria) })).statusCode).toBe(403);
+
+    const mine = (await app.inject({ url: '/api/v1/volunteer/leaderboards', headers: as(sam) })).json();
+    expect(mine.boards[0]).toMatchObject({ org: { name: 'Board Org' }, you: { words: 6, place: 2 } });
+    const shys = (await app.inject({ url: '/api/v1/volunteer/leaderboards', headers: as(shy) })).json();
+    expect(shys.boards[0].you).toBeNull();
+  });
+
+  it('shows ten names at most', async () => {
+    const o = org('Big Board');
+    const p = project(o, ['xl']);
+    const admin = await user(['xl'], o, 'admin');
+    for (let i = 0; i < 12; i++) {
+      const u = await user(['xl'], undefined, 'localizer', `Person ${String(i).padStart(2, '0')}`);
+      translated(u, p, 'one two three');
+      await optIn(u);
+    }
+    const board = (await app.inject({ url: '/api/v1/org/leaderboard', headers: as(admin) })).json();
+    expect(board.top).toHaveLength(10);
+    expect(board.others).toBe(2);
+  });
+});

@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import { createRequire } from 'node:module';
 import type { DatabaseSync as DatabaseSyncT } from 'node:sqlite';
 import { schema as badgesSchema } from './schema/badges.js';
+import { schema as cardsSchema } from './schema/cards.js';
 import { schema as moderationSchema } from './schema/moderation.js';
 import { schema as poolSchema } from './schema/pool.js';
 import { schema as postingSchema } from './schema/posting.js';
@@ -225,7 +226,7 @@ CREATE TABLE IF NOT EXISTS questions (
 CREATE TABLE IF NOT EXISTS xp_events (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL CHECK (kind IN ('translate', 'review')),
+  kind TEXT NOT NULL CHECK (kind IN ('translate', 'review', 'check', 'pick')),
   key_id INTEGER NOT NULL,
   locale TEXT NOT NULL,
   project_id INTEGER NOT NULL,
@@ -302,11 +303,13 @@ function migrate(db: DB, existing: Set<string>) {
   add('projects', 'review_mode', "TEXT NOT NULL DEFAULT 'standard' CHECK (review_mode IN ('standard', 'community'))");
   add('sessions', 'org_id', 'INTEGER REFERENCES orgs(id) ON DELETE SET NULL');
 
-  // SQLite can't relax NOT NULL or change a CHECK in place, so these two tables are rebuilt
+  // SQLite can't relax NOT NULL or change a CHECK in place, so these tables are rebuilt
   // (https://sqlite.org/lang_altertable.html#otheralter). Foreign keys are off while the old table is swapped out.
   const usersOld = cols(db, 'users').get('org_id')?.notnull === 1;
   const translationsOld = !tableSql(db, 'translations').includes("'ready'");
-  if (!usersOld && !translationsOld) return;
+  // Segment 3C: Spot the problem ('check') and Pick the better one ('pick') XP (docs/segment-3c-card-types.md).
+  const xpOld = existing.has('xp_events') && !tableSql(db, 'xp_events').includes("'pick'");
+  if (!usersOld && !translationsOld && !xpOld) return;
   db.exec('PRAGMA foreign_keys = OFF');
   try {
     tx(db, () => {
@@ -346,6 +349,26 @@ function migrate(db: DB, existing: Set<string>) {
           ALTER TABLE translations_new RENAME TO translations;
         `);
       }
+      if (xpOld) {
+        // SCHEMA re-creates the indexes after this.
+        db.exec(`
+          CREATE TABLE xp_events_new (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL CHECK (kind IN ('translate', 'review', 'check', 'pick')),
+            key_id INTEGER NOT NULL,
+            locale TEXT NOT NULL,
+            project_id INTEGER NOT NULL,
+            points INTEGER NOT NULL CHECK (points > 0),
+            status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'voided')),
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            settled_at TEXT
+          );
+          INSERT INTO xp_events_new SELECT id, user_id, kind, key_id, locale, project_id, points, status, created_at, settled_at FROM xp_events;
+          DROP TABLE xp_events;
+          ALTER TABLE xp_events_new RENAME TO xp_events;
+        `);
+      }
       const broken = all(db, 'PRAGMA foreign_key_check');
       if (broken.length) throw new Error(`Migration would break ${broken.length} foreign key(s); nothing was changed.`);
     });
@@ -377,7 +400,7 @@ export interface FeatureSchema {
   sql?: string;
   migrate?: (db: DB) => void;
 }
-const FEATURE_SCHEMAS: FeatureSchema[] = [signupSchema, moderationSchema, reviewSchema, postingSchema, poolSchema, streaksSchema, badgesSchema];
+const FEATURE_SCHEMAS: FeatureSchema[] = [signupSchema, moderationSchema, reviewSchema, postingSchema, poolSchema, streaksSchema, badgesSchema, cardsSchema];
 
 type Param = string | number | bigint | null | Uint8Array;
 

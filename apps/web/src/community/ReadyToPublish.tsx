@@ -17,6 +17,14 @@ const itemId = (i: { keyId: number; locale: string }) => `${i.keyId}:${i.locale}
  * any flags or disagreement. Publish all, publish one, edit (saves and publishes), or send back with a note.
  * Publishing here makes text approved; the page then offers to publish a new version in one step.
  */
+/** " · 7 of 9 volunteers preferred this wording", from Pick the better one (advice, not approvals). */
+function pickSummary(picks: { text: string; count: number }[], text: string) {
+  const total = picks.reduce((n, p) => n + p.count, 0);
+  if (!total) return '';
+  const forThis = picks.find((p) => p.text === text)?.count ?? 0;
+  return ` · ${forThis} of ${total} volunteer${total === 1 ? '' : 's'} preferred this wording`;
+}
+
 export function ReadyToPublish({ project, reload }: { project: Project; reload: () => Promise<void> }) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [locale, setLocale] = useState('');
@@ -131,6 +139,7 @@ export function ReadyToPublish({ project, reload }: { project: Project; reload: 
               <span className="small muted">
                 {item.review.reviews} review{item.review.reviews === 1 ? '' : 's'} · {item.review.approvals} approval{item.review.approvals === 1 ? '' : 's'}
                 {item.review.escalated ? ' · settled by a lead reviewer' : ''}
+                {pickSummary(item.review.picks, item.text)}
               </span>
               <span className="spacer" />
               {item.disagreement && <span className="badge ready-disagree">reviewers disagreed</span>}

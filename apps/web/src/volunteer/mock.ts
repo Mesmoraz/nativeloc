@@ -65,7 +65,7 @@ function item(
     questions: [],
     approvals: opts.approvals ?? null,
     // Review items without a peer-approval count stand in for community review, so the Flag button shows.
-    review: opts.current && !opts.approvals ? { reviews: 1, approvals: 1, flags: 0, needed: 3, escalated: false } : null,
+    review: opts.current && !opts.approvals ? { reviews: 1, approvals: 1, flags: 0, needed: 3, escalated: false, picks: [] } : null,
     sentBack: null,
   };
 }
@@ -159,6 +159,25 @@ export const mockClient: VolunteerClient = {
       const [project, it] = translate ? t[ti++] : r[ri++];
       cards.push({ id: `${it.current ? 'review' : 'translate'}:${it.keyId}:${LOCALE}`, type: it.current ? 'review' : 'translate', project, org: ORGS[project.id], locale: LOCALE, item: it });
     }
+    // Every mock session shows the two newer card types too: a Spot the problem card second (planted in the first
+    // session, a control in the next), and a Pick card last.
+    if (cards.length >= 2) {
+      const org = ORGS[FOOD_BANK.id];
+      const base = { project: FOOD_BANK, org, locale: LOCALE };
+      cards.splice(1, 0, {
+        ...base,
+        id: `spot:${n + 1}`,
+        type: 'spot',
+        spot: { checkId: n + 1, source: 'We are open Monday to Friday, 9 AM to 5 PM.', shown: `Abrimos de lunes a viernes, de 9 a. m. a ${n % 2 ? 5 : 6} p. m.` },
+      });
+      cards.splice(size - 1);
+      cards.push({
+        ...base,
+        id: `pick:${900 + n}:${LOCALE}`,
+        type: 'pick',
+        pick: { keyId: 900 + n, source: 'Free groceries for anyone who needs them.', note: null, a: 'Comida gratis para quien la necesite.', b: 'Alimentos gratuitos para cualquier persona que los necesite.' },
+      });
+    }
     return { cards, empty: cards.length ? null : 'nothing_to_do' };
   },
 
@@ -220,10 +239,28 @@ export const mockClient: VolunteerClient = {
     return structuredClone(c);
   },
 
+  async answerSpot(checkId, verdict) {
+    await wait(200);
+    // Odd ids are planted ("5" became "6"), even ones are controls.
+    const planted = checkId % 2 === 1;
+    const correct = (verdict === 'problem') === planted;
+    if (correct) {
+      stats.xp.accepted += 5;
+      stats.today.accepted += 5;
+    }
+    didCard();
+    return { correct, planted, original: planted ? '5' : null, changed: planted ? '6' : null, xp: correct ? { points: 5, status: 'accepted' } : null };
+  },
+
+  async pick() {
+    await wait();
+    return { xp: award(5, 'pending', FOOD_BANK) };
+  },
+
   async flag() {
     await wait();
     didCard();
-    return { status: 'review', review: { reviews: 1, approvals: 0, flags: 1, needed: 5, escalated: false }, xp: { points: XP.review, status: 'pending' } };
+    return { status: 'review', review: { reviews: 1, approvals: 0, flags: 1, needed: 5, escalated: false, picks: [] }, xp: { points: XP.review, status: 'pending' } };
   },
 
   async report() {

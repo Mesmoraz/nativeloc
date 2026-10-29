@@ -3,10 +3,9 @@
 import type { QueueItem } from '../api';
 import type { CardOrg } from '../contracts';
 
-export type CardType = 'translate' | 'review';
+export type CardType = 'translate' | 'review' | 'spot' | 'pick';
 
-/** One screen in a session. `item` is the same shape the full editor's queue returns. */
-export interface Card {
+interface CardBase {
   /** Stable within a session, e.g. "translate:12:es". */
   id: string;
   type: CardType;
@@ -17,7 +16,40 @@ export interface Card {
   locale: string;
   /** Urgent strings come first in a session. */
   urgent?: boolean;
+}
+
+/** Translate or review a real string. `item` is the same shape the full editor's queue returns. */
+export interface WorkCard extends CardBase {
+  type: 'translate' | 'review';
   item: QueueItem;
+}
+
+/**
+ * Spot the problem (docs/segment-3c-card-types.md): an approved translation that might have one planted error.
+ * Answer with POST /api/v1/volunteer/checks/:checkId.
+ */
+export interface SpotCardData extends CardBase {
+  type: 'spot';
+  spot: { checkId: number; source: string; shown: string };
+}
+
+/** Pick the better one: two wordings of a string in community review, in random order. Advice, never an approval. */
+export interface PickCardData extends CardBase {
+  type: 'pick';
+  pick: { keyId: number; source: string; note: string | null; a: string; b: string };
+}
+
+/** One screen in a session. */
+export type Card = WorkCard | SpotCardData | PickCardData;
+
+/** POST /api/v1/volunteer/checks/:id { verdict: 'ok' | 'problem' } */
+export interface SpotAnswer {
+  correct: boolean;
+  /** A number was changed: `original` became `changed`. */
+  planted: boolean;
+  original: string | null;
+  changed: string | null;
+  xp: XpAward['xp'];
 }
 
 /** GET /api/v1/volunteer/session?size=5&nonprofitsOnly=1 (size 1–10, default 5). Passing nonprofitsOnly saves it. */

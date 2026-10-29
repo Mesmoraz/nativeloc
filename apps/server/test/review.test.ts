@@ -304,10 +304,10 @@ describe('poster: Ready to publish', () => {
     const res = await app.inject({ url: `/api/v1/projects/${p}/ready?locale=es`, headers: as('admin') });
     expect(res.json()).toEqual({
       items: [
-        { keyId: calm, key: 'calm', source: 'Source calm', locale: 'es', text: 'Tranquilo', review: { reviews: 3, approvals: 3, flags: 0, needed: 3, escalated: false }, flags: [], disagreement: false },
+        { keyId: calm, key: 'calm', source: 'Source calm', locale: 'es', text: 'Tranquilo', review: { reviews: 3, approvals: 3, flags: 0, needed: 3, escalated: false, picks: [] }, flags: [], disagreement: false },
         {
           keyId: disputed, key: 'disputed', source: 'Source disputed', locale: 'es', text: 'Disputa',
-          review: { reviews: 6, approvals: 5, flags: 1, needed: 5, escalated: false }, flags: [{ reason: 'tone', count: 1 }], disagreement: true,
+          review: { reviews: 6, approvals: 5, flags: 1, needed: 5, escalated: false, picks: [] }, flags: [{ reason: 'tone', count: 1 }], disagreement: true,
         },
       ],
     });

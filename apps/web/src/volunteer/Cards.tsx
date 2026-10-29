@@ -6,7 +6,7 @@ import { formLabel, isEmptyModel, LengthMeter, noGrammarly, sourceExample } from
 import { languageName, nativeLanguageName, textDirection } from '../types';
 import type { VolunteerClient } from './client';
 import type { CardOrg, FlagReason, ReportReason } from '../contracts';
-import type { Card, XpAward } from './types';
+import type { Card, PickCardData, SpotCardData, WorkCard, XpAward } from './types';
 
 export interface CardResult {
   outcome: 'done' | 'skipped';
@@ -14,7 +14,7 @@ export interface CardResult {
 }
 
 interface CardProps {
-  card: Card;
+  card: WorkCard;
   client: VolunteerClient;
   onDone: (r: CardResult) => void;
 }
@@ -107,7 +107,7 @@ function ReasonPicker<R extends string>({ title, reasons, busy, note, onPick, on
 }
 
 /** "Report this project": spam, selling, or harmful. The card is skipped once the report is in. */
-function ReportLink({ card, client, onDone }: Pick<CardProps, 'card' | 'client' | 'onDone'>) {
+function ReportLink({ card, keyId, client, onDone }: { card: Card; keyId: number; client: VolunteerClient; onDone: (r: CardResult) => void }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
@@ -116,7 +116,7 @@ function ReportLink({ card, client, onDone }: Pick<CardProps, 'card' | 'client' 
     setBusy(true);
     setNote('');
     try {
-      await client.report(card.project.id, card.item.keyId, reason);
+      await client.report(card.project.id, keyId, reason);
       setSent(true);
       setTimeout(() => onDone({ outcome: 'skipped', xp: null }), 900);
     } catch (e) {
@@ -310,7 +310,7 @@ function Editor({ item, source, locale, model, setModel, issues, note }: { item:
  * Editor state shared by Translate and Review → Improve. Live checks stay quiet about missing pieces until the
  * volunteer taps Next; after that, the server's answer (a 422 with `issues`) is what's shown until they edit.
  */
-function useTranslation(card: Card, client: VolunteerClient, onDone: (r: CardResult) => void, approve: boolean) {
+function useTranslation(card: WorkCard, client: VolunteerClient, onDone: (r: CardResult) => void, approve: boolean) {
   const { item, locale } = card;
   const [model, setModelState] = useState<EditorModel>(item.template);
   const [tried, setTried] = useState(false);
@@ -368,7 +368,7 @@ export function TranslateCard({ card, client, onDone }: CardProps) {
         <SourceBlock item={card.item} source={card.project.sourceLocale} />
         <Context item={card.item} />
         <Editor item={card.item} source={card.project.sourceLocale} locale={card.locale} model={t.model} setModel={t.setModel} issues={t.issues} note={t.note} />
-        <ReportLink card={card} client={client} onDone={onDone} />
+        <ReportLink card={card} keyId={card.item.keyId} client={client} onDone={onDone} />
       </div>
       <div className="v-actions">
         <button className="v-btn ghost" onClick={() => onDone({ outcome: 'skipped', xp: null })} disabled={t.saving}>
@@ -469,6 +469,7 @@ export function ReviewCard({ card, client, onDone }: CardProps) {
             <p className="small muted" dir="ltr" style={{ margin: 0 }}>
               Does it say the same thing, and read naturally? Approve it, or improve the wording.
             </p>
+            {item.review && item.review.picks.length > 0 && <PickTally picks={item.review.picks} locale={locale} />}
             {/* Flags are part of community review; standard-review projects have Improve and reviewers instead. */}
             {item.review &&
               (flagging ? (
@@ -485,7 +486,7 @@ export function ReviewCard({ card, client, onDone }: CardProps) {
             )}
           </section>
         )}
-        <ReportLink card={card} client={client} onDone={onDone} />
+        <ReportLink card={card} keyId={card.item.keyId} client={client} onDone={onDone} />
       </div>
       <div className="v-actions">
         {improving ? (
@@ -510,6 +511,175 @@ export function ReviewCard({ card, client, onDone }: CardProps) {
             </button>
           </>
         )}
+      </div>
+    </>
+  );
+}
+
+/** "Volunteers' picks": how many preferred each wording (Pick the better one). Advice for whoever settles it. */
+export function PickTally({ picks, locale }: { picks: { text: string; count: number }[]; locale: string }) {
+  const total = picks.reduce((n, p) => n + p.count, 0);
+  return (
+    <div className="v-pick-tally small" dir="ltr">
+      <span className="muted">
+        {total} volunteer{total === 1 ? '' : 's'} picked between wordings:
+      </span>
+      <ul>
+        {picks.map((p) => (
+          <li key={p.text}>
+            <b>{p.count}</b>{' '}
+            <span dir={textDirection(locale)} lang={locale}>
+              “{p.text}”
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function PlainSource({ card, text, note }: { card: Card; text: string; note?: string | null }) {
+  return (
+    <>
+      <section className="v-source" aria-label={`${languageName(card.project.sourceLocale)} original`}>
+        <div className="label-row">{languageName(card.project.sourceLocale)}</div>
+        <p className="v-source-text">{text}</p>
+      </section>
+      {note && (
+        <div className="v-context">
+          <div className="context-note">{note}</div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Spot the problem: an approved translation that might have one planted error. Graded at once; the answer shows
+ * what was planted, if anything. Doesn't say what kind of error to look for, so it stays a real check.
+ */
+export function SpotCard({ card, client, onDone }: { card: SpotCardData; client: VolunteerClient; onDone: (r: CardResult) => void }) {
+  const { spot, locale } = card;
+  const [busy, setBusy] = useState(false);
+  const [answer, setAnswer] = useState<Awaited<ReturnType<VolunteerClient['answerSpot']>> | null>(null);
+  const [note, setNote] = useState('');
+
+  async function send(verdict: 'ok' | 'problem') {
+    if (busy || answer) return;
+    setBusy(true);
+    setNote('');
+    try {
+      setAnswer(await client.answerSpot(spot.checkId, verdict));
+    } catch (e) {
+      setNote(e instanceof ApiError ? e.message : 'Could not save. Check your connection and try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  const next = () => answer && onDone({ outcome: 'done', xp: answer.xp });
+  useSubmitKey(() => (answer ? next() : undefined));
+
+  return (
+    <>
+      <div className="v-body">
+        <CardHead card={card} kind="Spot the problem" />
+        <p className="small muted v-spot-lead">This translation was approved, but we may have planted one error in it. Is it right?</p>
+        <PlainSource card={card} text={spot.source} />
+        <section className="v-translation" dir={textDirection(locale)} lang={locale}>
+          <div className="label-row" dir="ltr">
+            {languageName(locale)} translation
+          </div>
+          <p className="v-target-text">{spot.shown}</p>
+        </section>
+        {answer && (
+          <div className={`alert ${answer.correct ? 'ok' : 'warn'} v-spot-answer`} role="status">
+            <b>{answer.correct ? 'Right!' : 'Not quite.'}</b>{' '}
+            {answer.planted ? (
+              <>
+                We changed a number: <b>{answer.original}</b> became <b>{answer.changed}</b>.
+              </>
+            ) : (
+              'This one was correct as it is.'
+            )}
+          </div>
+        )}
+        {note && (
+          <div className="alert error" role="alert">
+            {note}
+          </div>
+        )}
+      </div>
+      <div className="v-actions">
+        {answer ? (
+          <button className="v-btn primary v-main" onClick={next}>
+            Next
+          </button>
+        ) : (
+          <>
+            {/* No Skip: a check takes a few seconds, and the ✕ still ends the session. */}
+            <button className="v-btn" onClick={() => void send('problem')} disabled={busy}>
+              Something’s wrong
+            </button>
+            <button className="v-btn primary v-main" onClick={() => void send('ok')} disabled={busy}>
+              Looks right
+            </button>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** Pick the better one: two wordings, tap the one that says it better. A pick is advice for the reviewers. */
+export function PickCard({ card, client, onDone }: { card: PickCardData; client: VolunteerClient; onDone: (r: CardResult) => void }) {
+  const { pick, locale } = card;
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+
+  async function choose(chosen: string, other: string) {
+    if (busy) return;
+    setBusy(chosen);
+    setNote('');
+    try {
+      const r = await client.pick(pick.keyId, locale, chosen, other);
+      onDone({ outcome: 'done', xp: r.xp });
+    } catch (e) {
+      setNote(e instanceof ApiError ? e.message : 'Could not save. Check your connection and try again.');
+      setBusy(null);
+    }
+  }
+
+  return (
+    <>
+      <div className="v-body">
+        <CardHead card={card} kind="Pick the better one" />
+        <OrgLine org={card.org} />
+        <PlainSource card={card} text={pick.source} note={pick.note} />
+        <p className="small muted v-spot-lead">Two volunteers wrote it differently. Which says it better? Your pick helps the reviewers decide.</p>
+        <div className="v-pick-options" dir={textDirection(locale)} lang={locale}>
+          {[
+            [pick.a, pick.b],
+            [pick.b, pick.a],
+          ].map(([chosen, other], i) => (
+            <button key={i} className={`v-pick-option ${busy === chosen ? 'chosen' : ''}`} onClick={() => void choose(chosen, other)} disabled={!!busy}>
+              <span className="v-pick-letter" dir="ltr">
+                {i === 0 ? 'A' : 'B'}
+              </span>
+              <span className="v-target-text">{chosen}</span>
+            </button>
+          ))}
+        </div>
+        {note && (
+          <div className="alert error" role="alert">
+            {note}
+          </div>
+        )}
+        <ReportLink card={card} keyId={pick.keyId} client={client} onDone={onDone} />
+      </div>
+      <div className="v-actions">
+        <button className="v-btn ghost v-main" onClick={() => onDone({ outcome: 'skipped', xp: null })} disabled={!!busy}>
+          Skip
+        </button>
       </div>
     </>
   );

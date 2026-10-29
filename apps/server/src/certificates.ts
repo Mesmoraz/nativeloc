@@ -1,4 +1,5 @@
 import { HttpError, randomToken } from './auth.js';
+import { REAL_WORK } from './badges.js';
 import { all, get, run, type DB } from './db.js';
 import { localDay, timeZoneOf } from './streaks.js';
 
@@ -65,10 +66,13 @@ export function issueCertificate(db: DB, user: { id: number; name: string }, per
   if (to > today) throw new HttpError(400, "The period can't end in the future.");
   if (from && from > to) throw new HttpError(400, 'The period has to start before it ends.');
 
-  const where = "x.user_id = ? AND x.status = 'accepted' AND substr(x.created_at, 1, 10) BETWEEN ? AND ?";
+  // Spot the problem ('check') is practice, not help to an org; a pick is review work.
+  const where = `x.user_id = ? AND x.status = 'accepted' AND x.kind IN ${REAL_WORK} AND substr(x.created_at, 1, 10) BETWEEN ? AND ?`;
   const args = [user.id, from ?? '0000-01-01', to] as const;
   const counts = { translate: 0, review: 0 };
-  for (const r of all<{ kind: 'translate' | 'review'; n: number }>(db, `SELECT x.kind, COUNT(*) AS n FROM xp_events x WHERE ${where} GROUP BY x.kind`, ...args)) counts[r.kind] = r.n;
+  for (const r of all<{ kind: 'translate' | 'review' | 'pick'; n: number }>(db, `SELECT x.kind, COUNT(*) AS n FROM xp_events x WHERE ${where} GROUP BY x.kind`, ...args)) {
+    counts[r.kind === 'translate' ? 'translate' : 'review'] += r.n;
+  }
   const minutes = counts.translate * RATES.translate + counts.review * RATES.review;
   if (minutes < MIN_MINUTES) throw new HttpError(422, "There isn't half an hour of accepted work in that period yet.");
   const orgs = all<{ name: string }>(

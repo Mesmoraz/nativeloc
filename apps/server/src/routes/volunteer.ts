@@ -3,6 +3,7 @@ import { HttpError, requireUser } from '../auth.js';
 import { get, run, type DB } from '../db.js';
 import { BADGE_IDS, markSeen, type BadgeId } from '../badges.js';
 import { certificatesOf, issueCertificate, publicCertificate, revokeCertificate } from '../certificates.js';
+import { answerSpot } from '../cards/spot.js';
 import { buildSession } from '../pool/session.js';
 import { DAILY_GOALS, dailyGoalOf, type DailyGoal } from '../streaks.js';
 import { stats } from '../xp.js';
@@ -32,13 +33,22 @@ function flag(v: unknown): boolean | undefined {
 }
 
 export function volunteerRoutes(app: FastifyInstance, db: DB) {
-  app.get<{ Querystring: { size?: string; nonprofitsOnly?: string } }>('/api/v1/volunteer/session', async (req) => {
+  app.get<{ Querystring: { size?: string; nonprofitsOnly?: string; spot?: string } }>('/api/v1/volunteer/session', async (req) => {
     const { user } = requireUser(db, req);
     const size = Math.min(Math.max(Math.trunc(Number(req.query.size)) || 5, 1), 10);
     // Passing the filter saves it, so the next session (on any device) starts the same way.
     const asked = flag(req.query.nonprofitsOnly);
     if (asked !== undefined) savePrefs(db, user.id, { nonprofitsOnly: asked });
-    return buildSession(db, user, size, asked ?? nonprofitsOnlyPref(db, user.id));
+    // ?spot=1 forces a Spot the problem card, so it can be tried without waiting for the 1-in-3 chance. Never in
+    // production, where it would let anyone farm practice XP.
+    const spotChance = req.query.spot === '1' && process.env.NODE_ENV !== 'production' ? 1 : undefined;
+    return buildSession(db, user, size, asked ?? nonprofitsOnlyPref(db, user.id), Date.now(), { spotChance });
+  });
+
+  // Spot the problem: the answer, graded at once (cards/spot.ts).
+  app.post<{ Params: { id: string }; Body: { verdict?: unknown } }>('/api/v1/volunteer/checks/:id', async (req) => {
+    const { user } = requireUser(db, req);
+    return answerSpot(db, user, Number(req.params.id), req.body?.verdict);
   });
 
   app.get('/api/v1/volunteer/stats', async (req) => {

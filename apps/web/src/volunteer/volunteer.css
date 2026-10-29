@@ -188,3 +188,15 @@
 .v-cert-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .v-btn.small { padding: 6px 12px; font-size: 0.9rem; min-height: 0; }
 a.v-btn { display: inline-flex; align-items: center; text-decoration: none; color: var(--muted); }
+
+/* Spot the problem and Pick the better one (segment-3c-card-types.md) */
+.v-spot-lead { margin: 0; }
+.v-spot-answer { margin: 0; }
+.v-pick-options { display: flex; flex-direction: column; gap: 10px; }
+.v-pick-option { display: flex; gap: 12px; align-items: flex-start; width: 100%; padding: 14px; border: 2px solid var(--border); border-radius: var(--radius); background: var(--surface); color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.v-pick-option:hover:not(:disabled) { border-color: var(--accent); }
+.v-pick-option.chosen { border-color: var(--accent); background: var(--accent-soft); }
+.v-pick-option .v-target-text { margin: 0; }
+.v-pick-letter { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-weight: 800; }
+.v-pick-tally { margin: 0; }
+.v-pick-tally ul { margin: 4px 0 0; padding-left: 18px; }

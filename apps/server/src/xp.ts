@@ -9,6 +9,8 @@ import { dailyGoalOf, localDay, localMidnightUtc, streakOf, timeZoneOf } from '.
  * that changes the translation, so the ledger can't drift from it.
  */
 export const XP = { translate: 10, review: 5 } as const;
+/** Spot the problem (a correct answer) and Pick the better one: see cards/spot.ts and cards/pick.ts. */
+export const CARD_XP = { check: 5, pick: 5 } as const;
 
 export type XpKind = keyof typeof XP;
 /** The `xp` field of the save and approve responses: what this action earned, or null. */
@@ -125,6 +127,16 @@ export function settleCommunity(db: DB, s: StringRef, finalText: string) {
      ) THEN 'accepted' ELSE 'voided' END
      WHERE key_id = ? AND locale = ? AND status = 'pending' AND kind = 'review'`,
     finalText, finalText, s.keyId, s.locale,
+  );
+  // Pick the better one: paid when you picked the wording that won (cards/pick.ts). Before settle(), which would
+  // accept every pending event on the string.
+  run(
+    db,
+    `UPDATE xp_events SET settled_at = CURRENT_TIMESTAMP, status = CASE WHEN EXISTS (
+       SELECT 1 FROM picks p WHERE p.key_id = xp_events.key_id AND p.locale = xp_events.locale AND p.user_id = xp_events.user_id AND p.chosen = ?
+     ) THEN 'accepted' ELSE 'voided' END
+     WHERE key_id = ? AND locale = ? AND status = 'pending' AND kind = 'pick'`,
+    finalText, s.keyId, s.locale,
   );
   settle(db, s);
 }

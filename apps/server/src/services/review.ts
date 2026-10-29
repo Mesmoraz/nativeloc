@@ -2,6 +2,7 @@ import { displayKey, validateTranslation, type Issue } from '@nativeloc/core';
 import { HttpError } from '../auth.js';
 import { all, get, run, tx, type DB, type KeyRow, type Member, type ProjectRow, type TranslationRow } from '../db.js';
 import { fileReport } from '../moderation/reports.js';
+import { pickTally, type PickTally } from '../cards/pick.js';
 import { recordActivity } from '../streaks.js';
 import { tierOf } from '../trust.js';
 import { awardOf, onApprove, onCommunityReview, onCommunitySave, onSave, onVote, settleCommunity, type XpAward } from '../xp.js';
@@ -105,9 +106,9 @@ export function communityState(db: DB, keyId: number, locale: string): Community
   return { reviews: counted.length, approvals, flags, needed, escalated: !consensus && counted.length >= COMMUNITY.escalateAt, consensus, disagreement };
 }
 
-export const reviewOf = (db: DB, keyId: number, locale: string): CommunityReview => {
+export const reviewOf = (db: DB, keyId: number, locale: string): CommunityReview & { picks: PickTally[] } => {
   const { consensus: _c, disagreement: _d, ...review } = communityState(db, keyId, locale);
-  return review;
+  return { ...review, picks: pickTally(db, keyId, locale) };
 };
 
 const ref = (project: ProjectRow, keyId: number, locale: string) => ({ projectId: project.id, keyId, locale });
@@ -194,14 +195,20 @@ export function saveTranslation(db: DB, project: ProjectRow, user: Member, keyId
   return tx(db, () => {
     if (community) {
       if (!prev || (prev.status !== 'review' && prev.status !== 'ready')) {
-        // A new submission starts a new round.
+        // A new submission starts a new round. Picks from the last round were settled with it.
         run(db, 'DELETE FROM reviews WHERE key_id = ? AND locale = ?', keyId, locale);
+        run(db, 'DELETE FROM picks WHERE key_id = ? AND locale = ?', keyId, locale);
       } else if (prev.text !== text) {
         run(db, 'UPDATE reviews SET current = 0 WHERE key_id = ? AND locale = ?', keyId, locale);
         // Someone else editing text in review is an Improve: a review, and a disagreement.
         if (prev.updated_by !== user.id) {
           const counts = reviewRight(db, project, user, locale) !== null ? 1 : 0;
-          run(db, "INSERT INTO reviews (key_id, locale, user_id, kind, text, counts) VALUES (?, ?, ?, 'improve', ?, ?)", keyId, locale, user.id, text, counts);
+          // The replaced wording is kept, so Pick the better one can show both (cards/pick.ts).
+          run(
+            db,
+            "INSERT INTO reviews (key_id, locale, user_id, kind, text, counts, previous_text, previous_by) VALUES (?, ?, ?, 'improve', ?, ?, ?, ?)",
+            keyId, locale, user.id, text, counts, prev.text, prev.updated_by,
+          );
         }
       }
     }

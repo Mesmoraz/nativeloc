@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { HttpError, projectAccess, requireUser } from '../auth.js';
 import { all, get, run, tx, type DB, type KeyRow } from '../db.js';
+import { decideFinal } from '../cards/final.js';
 import { savePick } from '../cards/pick.js';
 import { approveTranslation, flagTranslation, queue, reviewRight, saveTranslation } from '../services.js';
 import { recordActivity } from '../streaks.js';
@@ -45,6 +46,15 @@ export function localizeRoutes(app: FastifyInstance, db: DB) {
     const { project, member } = projectAccess(db, req, key.project_id, 'review', locale);
     if (!member) throw new HttpError(403, 'Sign in to review.');
     return approveTranslation(db, project, member, key.id, locale);
+  });
+
+  /** Final check (cards/final.ts): an org's Approved Reviewer publishes ready text, or sends it back. */
+  app.post<{ Params: { keyId: string; locale: string }; Body: { decision?: unknown; note?: unknown } }>('/api/v1/translations/:keyId/:locale/final', async (req) => {
+    const locale = checkLocale(req.params.locale);
+    const key = keyProject(db, intParam(req.params.keyId));
+    const { project, member } = projectAccess(db, req, key.project_id, 'review', locale);
+    if (!member) throw new HttpError(403, 'Sign in to review.');
+    return decideFinal(db, project, member, key.id, locale, req.body?.decision, req.body?.note);
   });
 
   /** Pick the better one (cards/pick.ts): which of a string's two wordings you prefer. Advice, never an approval. */

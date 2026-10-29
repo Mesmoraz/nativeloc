@@ -14,12 +14,12 @@ export function communityRoutes(app: FastifyInstance, { db }: RouteDeps) {
 
   /** Publish ready text (ready → approved): the listed items, or everything when `items` is omitted. */
   app.post<{ Params: { id: string }; Body: { items?: { keyId: number; locale: string }[] } }>('/api/v1/projects/:id/ready/approve', async (req) => {
-    const { project } = projectAccess(db, req, intParam(req.params.id), 'admin');
+    const { project, member } = projectAccess(db, req, intParam(req.params.id), 'admin');
     const items = req.body?.items;
     if (items !== undefined && (!Array.isArray(items) || items.some((i) => !i || !Number.isInteger(i.keyId) || typeof i.locale !== 'string'))) {
       throw new HttpError(400, 'items must be a list of { keyId, locale }.');
     }
-    return publishReady(db, project, items?.map((i) => ({ keyId: i.keyId, locale: checkLocale(i.locale) })));
+    return publishReady(db, project, items?.map((i) => ({ keyId: i.keyId, locale: checkLocale(i.locale) })), { userId: member?.id ?? null, via: 'poster' });
   });
 
   /** Send ready text back to review with a note for reviewers. */

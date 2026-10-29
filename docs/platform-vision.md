@@ -248,7 +248,9 @@ with no help from us.
   waits for Segment 4's urgent lane.
 - More card types: **Pick the better one** and **Spot the problem** (gold checks in the normal queue)
   ([segment-3c-card-types.md](segment-3c-card-types.md)).
-- Favorites, org-scoped Approved Reviewers, org leaderboards (opt-in), thank-you notes.
+- Favorites, org-scoped Approved Reviewers and thank-you notes
+  ([segment-3d-org-features.md](segment-3d-org-features.md)), and org leaderboards (opt-in). Campaigns (and
+  thanking by campaign) come with the campaign progress bars below.
 - Team progress bars per language and per campaign.
 - Volunteer-hour certificates.
 

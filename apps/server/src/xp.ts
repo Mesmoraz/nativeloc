@@ -1,5 +1,6 @@
 import { awardBadges, badgesOf } from './badges.js';
 import { all, get, run, type DB } from './db.js';
+import { messagesOf } from './org/messages.js';
 import { dailyGoalOf, localDay, localMidnightUtc, streakOf, timeZoneOf } from './streaks.js';
 
 /**
@@ -186,6 +187,8 @@ export function stats(db: DB, userId: number, now = Date.now()) {
       done: get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM volunteer_activity WHERE user_id = ? AND day = ?', userId, today)!.n,
     },
     badges: badgesOf(db, userId),
+    /** What orgs told the volunteer (thank-yous, favorite, Approved Reviewer), not shown yet. */
+    messages: messagesOf(db, userId),
     approvedStrings: get<{ n: number }>(
       db,
       "SELECT COUNT(*) AS n FROM (SELECT DISTINCT key_id, locale FROM xp_events WHERE user_id = ? AND kind = 'translate' AND status = 'accepted')",

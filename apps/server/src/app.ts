@@ -11,6 +11,7 @@ import { bundleRoutes } from './routes/bundles.js';
 import { hostedRoutes } from './routes/hosted.js';
 import { communityRoutes } from './routes/community.js';
 import { localizeRoutes } from './routes/localize.js';
+import { orgRoutes } from './routes/org.js';
 import { placementRoutes } from './routes/placement.js';
 import { postingRoutes } from './routes/posting.js';
 import { projectRoutes } from './routes/projects.js';
@@ -65,6 +66,7 @@ export async function buildApp(opts: AppOptions) {
   signupRoutes(app, deps);
   staffRoutes(app, deps);
   communityRoutes(app, deps);
+  orgRoutes(app, deps);
   postingRoutes(app, deps);
 
   if (opts.webDist && existsSync(opts.webDist)) {

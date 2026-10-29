@@ -93,7 +93,7 @@ describe('pool sessions', () => {
     expect(s.cards[0].item.keyId).toBe(ids.urgent);
     const translate = s.cards.filter((c: C) => c.type === 'translate').map((c: C) => c.project.name);
     expect(translate[1]).toBe('Nonprofit'); // all new, so the +24 verified boost decides
-    expect(s.cards.find((c: C) => c.project.name === 'Nonprofit').org).toEqual({ id: expect.any(Number), name: 'Food Bank', type: 'nonprofit', verified: true, description: 'About Food Bank' });
+    expect(s.cards.find((c: C) => c.project.name === 'Nonprofit').org).toEqual({ id: expect.any(Number), name: 'Food Bank', type: 'nonprofit', verified: true, description: 'About Food Bank', favorite: false });
     expect(s.cards.find((c: C) => c.project.name === 'Claimed').org.verified).toBe(false);
   });
 

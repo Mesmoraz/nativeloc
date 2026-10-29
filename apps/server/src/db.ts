@@ -5,6 +5,7 @@ import type { DatabaseSync as DatabaseSyncT } from 'node:sqlite';
 import { schema as badgesSchema } from './schema/badges.js';
 import { schema as cardsSchema } from './schema/cards.js';
 import { schema as moderationSchema } from './schema/moderation.js';
+import { schema as orgVolunteersSchema } from './schema/orgVolunteers.js';
 import { schema as poolSchema } from './schema/pool.js';
 import { schema as postingSchema } from './schema/posting.js';
 import { schema as reviewSchema } from './schema/review.js';
@@ -400,7 +401,7 @@ export interface FeatureSchema {
   sql?: string;
   migrate?: (db: DB) => void;
 }
-const FEATURE_SCHEMAS: FeatureSchema[] = [signupSchema, moderationSchema, reviewSchema, postingSchema, poolSchema, streaksSchema, badgesSchema, cardsSchema];
+const FEATURE_SCHEMAS: FeatureSchema[] = [signupSchema, moderationSchema, reviewSchema, postingSchema, poolSchema, streaksSchema, badgesSchema, cardsSchema, orgVolunteersSchema];
 
 type Param = string | number | bigint | null | Uint8Array;
 
@@ -414,8 +415,12 @@ export function run(db: DB, sql: string, ...params: Param[]) {
   return db.prepare(sql).run(...params);
 }
 
+const inTx = new WeakSet<DB>();
+/** Runs `fn` in a transaction. Inside another tx it joins that one, so an error anywhere rolls back the whole. */
 export function tx<T>(db: DB, fn: () => T): T {
+  if (inTx.has(db)) return fn();
   db.exec('BEGIN');
+  inTx.add(db);
   try {
     const out = fn();
     db.exec('COMMIT');
@@ -423,6 +428,8 @@ export function tx<T>(db: DB, fn: () => T): T {
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
+  } finally {
+    inTx.delete(db);
   }
 }
 

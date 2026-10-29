@@ -4,6 +4,7 @@ import { all, get, run, tx, type DB, type KeyRow, type Member, type ProjectRow, 
 import { fileReport } from '../moderation/reports.js';
 import { pickTally, type PickTally } from '../cards/pick.js';
 import { recordActivity } from '../streaks.js';
+import { isApprovedReviewer } from '../org/volunteers.js';
 import { tierOf } from '../trust.js';
 import { awardOf, onApprove, onCommunityReview, onCommunitySave, onSave, onVote, settleCommunity, type XpAward } from '../xp.js';
 
@@ -127,10 +128,27 @@ function currentReviewBy(db: DB, keyId: number, locale: string, userId: number) 
 }
 
 /** Community consensus (or a Lead settling an escalated string): 'ready' for the poster, and XP settles. */
-function makeReady(db: DB, project: ProjectRow, t: TranslationRow) {
-  run(db, "UPDATE translations SET status = 'ready', updated_at = CURRENT_TIMESTAMP WHERE key_id = ? AND locale = ?", t.key_id, t.locale);
+function makeReady(db: DB, project: ProjectRow, t: TranslationRow): 'ready' | 'approved' {
+  // An Approved Reviewer among the approvals stands in for the poster's click (org/volunteers.ts): it ships.
+  const approvers = all<{ user_id: number }>(
+    db,
+    "SELECT user_id FROM reviews WHERE key_id = ? AND locale = ? AND kind = 'approve' AND current = 1 AND counts = 1 AND text = ? ORDER BY id",
+    t.key_id, t.locale, t.text,
+  );
+  const stand = approvers.find((a) => isApprovedReviewer(db, project.org_id, a.user_id, t.locale));
+  const status = stand ? 'approved' : 'ready';
+  run(db, 'UPDATE translations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE key_id = ? AND locale = ?', status, t.key_id, t.locale);
+  if (stand) {
+    recordApprover(db, t.key_id, t.locale, stand.user_id);
+    recordPublication(db, project, t.key_id, t.locale, stand.user_id, 'approved_reviewer');
+  }
   settleCommunity(db, ref(project, t.key_id, t.locale), t.text);
+  return status;
 }
+
+/** Who published a community string, and how (Segment 3's "done when": do orgs rely on Approved Reviewers?). */
+const recordPublication = (db: DB, project: ProjectRow, keyId: number, locale: string, userId: number | null, via: 'poster' | 'approved_reviewer') =>
+  run(db, 'INSERT INTO publications (key_id, locale, project_id, user_id, via) VALUES (?, ?, ?, ?, ?)', keyId, locale, project.id, userId, via);
 
 function communityVote(db: DB, project: ProjectRow, user: Member, t: TranslationRow) {
   if (t.status !== 'review') throw new HttpError(409, 'This one is no longer waiting for review.');
@@ -147,10 +165,9 @@ function communityVote(db: DB, project: ProjectRow, user: Member, t: Translation
     }
     const after = communityState(db, t.key_id, t.locale);
     const leadSettles = before.escalated && tierOf(db, user, t.locale) === 'lead';
-    let status: 'review' | 'ready' = 'review';
+    let status: 'review' | 'ready' | 'approved' = 'review';
     if (after.consensus || leadSettles) {
-      makeReady(db, project, t);
-      status = 'ready';
+      status = makeReady(db, project, t);
       if (xp) xp = awardOf(db, user.id, 'review', s);
     }
     recordActivity(db, user, 'review', s);
@@ -298,14 +315,25 @@ export function readyList(db: DB, project: ProjectRow, locale?: string) {
   };
 }
 
-/** Publishing ready text: 'ready' → 'approved'. All of the project's ready text when `items` is omitted. */
-export function publishReady(db: DB, project: ProjectRow, items?: { keyId: number; locale: string }[]) {
+/**
+ * Publishing ready text: 'ready' → 'approved'. All of the project's ready text when `items` is omitted. `by` says who
+ * clicked: the poster, or an Approved Reviewer with a Final check card (cards/final.ts).
+ */
+export function publishReady(db: DB, project: ProjectRow, items?: { keyId: number; locale: string }[], by: { userId: number | null; via: 'poster' | 'approved_reviewer' } = { userId: null, via: 'poster' }) {
   return tx(db, () => {
-    const sql = `UPDATE translations SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE status = 'ready'
-                 AND key_id IN (SELECT id FROM keys WHERE project_id = ? AND archived = 0)`;
-    if (!items) return { approved: Number(run(db, sql, project.id).changes) };
+    const ready = all<{ key_id: number; locale: string }>(
+      db,
+      "SELECT t.key_id, t.locale FROM translations t JOIN keys k ON k.id = t.key_id WHERE t.status = 'ready' AND k.project_id = ? AND k.archived = 0",
+      project.id,
+    );
+    const wanted = items ? new Set(items.map((i) => `${Number(i.keyId)}:${String(i.locale)}`)) : null;
     let approved = 0;
-    for (const it of items) approved += Number(run(db, `${sql} AND key_id = ? AND locale = ?`, project.id, Number(it.keyId), String(it.locale)).changes);
+    for (const r of ready) {
+      if (wanted && !wanted.has(`${r.key_id}:${r.locale}`)) continue;
+      run(db, "UPDATE translations SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE key_id = ? AND locale = ?", r.key_id, r.locale);
+      recordPublication(db, project, r.key_id, r.locale, by.userId, by.via);
+      approved++;
+    }
     return { approved };
   });
 }

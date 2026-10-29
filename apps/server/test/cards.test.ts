@@ -231,6 +231,12 @@ describe('Pick the better one cards', () => {
     expect(picksIn(std.a)).toEqual([]);
   });
 
+  it('deals one card per string: a Review card or a Pick card, not both', async () => {
+    const { k, a } = await improved();
+    const cards = buildSession(db, getUser(db, a)!, 5, false, Date.now(), { spotChance: 0, rand: () => 0 }).cards;
+    expect(cards.filter((c) => c.id.endsWith(`:${k}:xp`))).toHaveLength(1);
+  });
+
   it('saves a pick once, as advice, and settles its XP by the wording that wins', async () => {
     const { k, a, b, rev } = await improved();
     const res = await pick(a, k, 'Alimentos gratis', 'Comida gratis');

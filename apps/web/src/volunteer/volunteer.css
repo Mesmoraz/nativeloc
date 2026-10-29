@@ -200,3 +200,10 @@ a.v-btn { display: inline-flex; align-items: center; text-decoration: none; colo
 .v-pick-letter { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-weight: 800; }
 .v-pick-tally { margin: 0; }
 .v-pick-tally ul { margin: 4px 0 0; padding-left: 18px; }
+
+/* Favorites, Approved Reviewers and thank-yous (segment-3d-org-features.md) */
+.v-org-favorite { font-size: 0.8rem; font-weight: 600; color: var(--accent); }
+.v-messages { display: flex; flex-direction: column; gap: 8px; }
+.v-message { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.v-message > span:first-child { font-size: 1.2rem; line-height: 1.2; }
+.v-final-reason textarea { width: 100%; }

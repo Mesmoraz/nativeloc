@@ -1,9 +1,9 @@
 // The volunteer card flow's API shapes. The server (apps/server/src/routes/volunteer.ts) returns these
 // shapes and the web app consumes them. See docs/segment-1-volunteer-cards.md. Change both sides together.
 import type { QueueItem } from '../api';
-import type { CardOrg } from '../contracts';
+import type { CardOrg, CommunityReview } from '../contracts';
 
-export type CardType = 'translate' | 'review' | 'spot' | 'pick';
+export type CardType = 'translate' | 'review' | 'spot' | 'pick' | 'final';
 
 interface CardBase {
   /** Stable within a session, e.g. "translate:12:es". */
@@ -39,8 +39,28 @@ export interface PickCardData extends CardBase {
   pick: { keyId: number; source: string; note: string | null; a: string; b: string };
 }
 
+/**
+ * Final check (docs/segment-3d-org-features.md): the org's Approved Reviewer publishes text that reached agreement,
+ * or sends it back. POST /api/v1/translations/:keyId/:locale/final { decision, note? }.
+ */
+export interface FinalCardData extends CardBase {
+  type: 'final';
+  final: { keyId: number; source: string; note: string | null; text: string; review: CommunityReview; sentBack: string | null };
+}
+
 /** One screen in a session. */
-export type Card = WorkCard | SpotCardData | PickCardData;
+export type Card = WorkCard | SpotCardData | PickCardData | FinalCardData;
+
+/** Something an org told the volunteer, shown once on the home screen (then POST /volunteer/messages/seen). */
+export interface VolunteerMessage {
+  id: number;
+  kind: 'thanks' | 'favorite' | 'approved_reviewer';
+  org: { id: number; name: string };
+  project: { id: number; name: string } | null;
+  /** The note, for thanks. */
+  body: string | null;
+  createdAt: string;
+}
 
 /** POST /api/v1/volunteer/checks/:id { verdict: 'ok' | 'problem' } */
 export interface SpotAnswer {
@@ -86,6 +106,8 @@ export interface StatsResponse {
   goal: { target: DailyGoal; done: number };
   /** Badges earned, oldest first. Checked for new ones on every stats load. */
   badges: EarnedBadge[];
+  /** Messages from orgs not shown yet, oldest first. */
+  messages: VolunteerMessage[];
 }
 
 /** Server badge ids (apps/server/src/badges.ts). Names and wording are in badges.ts next to this file. */

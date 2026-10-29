@@ -2,7 +2,7 @@
 // without the server; production builds never load it.
 import { api } from '../api';
 import type { FlagReason, FlagResponse, ReportReason, ReportResponse } from '../contracts';
-import type { SessionResponse, StatsResponse, VolunteerSettings, XpAward } from './types';
+import type { DailyGoal, SessionResponse, StatsResponse, VolunteerSettings, XpAward } from './types';
 
 export type SaveResult = { status: 'approved' | 'review' } & XpAward;
 export type ApproveResult = { status: 'approved' | 'review'; approvals?: { count: number; needed: number } } & XpAward;
@@ -13,12 +13,13 @@ export interface VolunteerClient {
   stats(): Promise<StatsResponse>;
   settings(): Promise<VolunteerSettings>;
   setNonprofitsOnly(on: boolean): Promise<VolunteerSettings>;
+  setDailyGoal(goal: DailyGoal): Promise<VolunteerSettings>;
   /** Throws ApiError 422 with `details.issues` when the text doesn't pass validation. */
   save(keyId: number, locale: string, text: string, approve: boolean): Promise<SaveResult>;
   approve(keyId: number, locale: string): Promise<ApproveResult>;
-  /** 2C: a Review card's third choice. Only call when settings().actions.flag. */
+  /** A Review card's third choice, on community-reviewed projects only (the card's `item.review` is set). */
   flag(keyId: number, locale: string, reason: FlagReason, note?: string): Promise<FlagResponse>;
-  /** 2B: report a project (and optionally the string). Only call when settings().actions.report. */
+  /** Report a project (and optionally the string) to NativeLoc staff. */
   report(projectId: number, keyId: number, reason: ReportReason, note?: string): Promise<ReportResponse>;
 }
 
@@ -29,6 +30,7 @@ const real: VolunteerClient = {
   stats: () => api<StatsResponse>('/api/v1/volunteer/stats'),
   settings: () => api<VolunteerSettings>('/api/v1/volunteer/settings'),
   setNonprofitsOnly: (on) => api<VolunteerSettings>('/api/v1/volunteer/settings', { method: 'PUT', body: { nonprofitsOnly: on } }),
+  setDailyGoal: (goal) => api<VolunteerSettings>('/api/v1/volunteer/settings', { method: 'PUT', body: { dailyGoal: goal } }),
   save: (keyId, locale, text, approve) => api<SaveResult>(`/api/v1/translations/${keyId}/${locale}`, { method: 'PUT', body: { text, approve } }),
   approve: (keyId, locale) => api<ApproveResult>(`/api/v1/translations/${keyId}/${locale}/approve`, { method: 'POST' }),
   flag: (keyId, locale, reason, note) => api<FlagResponse>(`/api/v1/translations/${keyId}/${locale}/flag`, { method: 'POST', body: { reason, note } }),

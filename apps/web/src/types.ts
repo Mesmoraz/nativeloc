@@ -4,8 +4,8 @@ export interface LocaleProgressLike {
   locale: string;
   total: number;
   approved: number;
-  /** Agreed by community review, waiting for the poster (Segment 2C). */
-  ready?: number;
+  /** Agreed by community review, waiting for the poster. */
+  ready: number;
   review: number;
   outdated: number;
   todo: number;

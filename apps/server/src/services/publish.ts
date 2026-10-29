@@ -3,7 +3,7 @@ import { getAdapter, validateTranslation, type BundleManifest, type ExportEntry 
 import { all, get, run, tx, type DB, type ProjectRow } from '../db.js';
 import { projectLocales } from './progress.js';
 
-// Owned by Segment 2 piece 2C (community review engine): bundles ship only 'approved' text; quality labels go here.
+// Bundles ship only 'approved' text (and still-valid 'outdated' text), with a quality label per language.
 
 /**
  * Outdated text still ships if it is structurally valid against the new source. Community text goes outdated from

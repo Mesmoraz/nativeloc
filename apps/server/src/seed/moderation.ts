@@ -7,7 +7,7 @@ import { startVerification } from '../moderation/verify.js';
 import { screenText } from '../moderation/screen.js';
 import type { Demo } from './types.js';
 
-/** Owned by Segment 2 piece 2B. Demo data for verification and moderation. Runs once, after the core demo seed, before v1 is published. */
+/** Demo data for verification and moderation. Runs once, after the core demo seed, before v1 is published. */
 export function seedModeration(db: DB, _demo: Demo) {
   importEoBmfSync(db, join(dirname(fileURLToPath(import.meta.url)), '../../scripts/fixtures/eo-bmf-sample.csv'));
 

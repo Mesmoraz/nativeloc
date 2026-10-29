@@ -34,7 +34,7 @@ export interface Quality {
 interface Manifest {
   version: number;
   sourceLocale: string;
-  /** quality and reviewers are missing from servers before Segment 2C. */
+  /** quality and reviewers are missing from servers that predate quality labels. */
   locales: Record<string, { sha256: string; url: string; completeness: number; quality?: Quality['quality']; reviewers?: number }>;
 }
 

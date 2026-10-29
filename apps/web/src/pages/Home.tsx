@@ -2,9 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { TopBar, useSession } from '../App';
 import { api, type Project } from '../api';
-import { HomeNotice as CommunityNotice } from '../community/HomeNotice';
 import { ProgressBar } from '../components';
-import { HomeNotice as SignupNotice } from '../signup/HomeNotice';
+import { HomeNotice } from '../signup/HomeNotice';
 import { languageName, nativeLanguageName } from '../types';
 import '../volunteer/volunteer.css';
 
@@ -24,8 +23,7 @@ export function Home() {
       <TopBar />
       <main className="page">
         {error && <div className="alert error">{error}</div>}
-        <SignupNotice />
-        {isAdmin && <CommunityNotice />}
+        <HomeNotice />
         {projects && (isAdmin ? <AdminHome projects={projects} /> : <LocalizerHome projects={projects} />)}
       </main>
     </>

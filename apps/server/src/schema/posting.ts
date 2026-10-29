@@ -1,11 +1,11 @@
-import type { PieceSchema } from '../db.js';
+import type { FeatureSchema } from '../db.js';
 
 /**
- * Owned by Segment 2 piece 2D (posting content: crawl jobs). Tables and columns this piece adds go here, never in db.ts.
+ * Posting content: website crawl jobs.
  * Runs on every start after the core schema: use CREATE ... IF NOT EXISTS, and guard ALTERs with PRAGMA table_info.
  * Use db.exec / db.prepare directly (db.ts imports this file, so don't rely on its helpers at load time).
  */
-export const schema: PieceSchema = {
+export const schema: FeatureSchema = {
   sql: `
 -- Website crawls run as background jobs (posting/crawlJobs.ts). A job left 'running' by a stopped server is marked
 -- 'failed' on the next start; 'queued' jobs run then.

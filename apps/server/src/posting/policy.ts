@@ -1,11 +1,9 @@
-import { get, run, type DB, type OrgRow, type ProjectRow } from '../db.js';
+import { get, getOrg, run, type DB, type OrgRow, type ProjectRow } from '../db.js';
 import { screenProject } from '../moderation/screen.js';
 import { assertMayPost as assertOrgMayPost } from '../signup/gate.js';
 
 /** Decision (plan §4): pages one website crawl reads on the community tier (about 4,000 words). */
 export const CRAWL_PAGE_LIMIT = 15;
-
-export const getOrg = (db: DB, orgId: number) => get<OrgRow>(db, 'SELECT * FROM orgs WHERE id = ?', orgId);
 
 /**
  * Refuses posting (new projects, pasted text, crawls, submitting) for orgs that can't post yet. The rule (business
@@ -18,7 +16,7 @@ export function assertMayPost(db: DB, orgId: number) {
 
 /**
  * How a project's translations are reviewed unless the poster picks. Private work is reviewed by the org's own
- * people, as before Segment 2. Public work: verified nonprofits keep standard review (their Trusted and Lead
+ * people, as before open sign-up. Public work: verified nonprofits keep standard review (their Trusted and Lead
  * reviewers); everyone else gets community review.
  */
 export function defaultReviewMode(org: Pick<OrgRow, 'type' | 'verification'> | undefined, visibility: 'private' | 'public'): 'standard' | 'community' {

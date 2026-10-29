@@ -34,14 +34,14 @@ export function Settings() {
       <TopBar />
       <main className="su-page stack">
         <h1>Account</h1>
-        {user.emailVerified === false && <ConfirmEmail email={user.email} />}
+        {!user.emailVerified && <ConfirmEmail email={user.email} />}
         <form className="card stack" onSubmit={save}>
           <label className="field">
             Name
             <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} />
           </label>
           <div className="small muted">
-            Email: {user.email} {user.emailVerified !== false && '· confirmed'}
+            Email: {user.email} {user.emailVerified && '· confirmed'}
           </div>
           <LanguagePicker value={locales} onChange={setLocales} />
           {user.locales.length > 0 && (

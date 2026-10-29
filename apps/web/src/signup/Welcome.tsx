@@ -32,7 +32,7 @@ export function Welcome() {
     <>
       <TopBar />
       <main className="su-page stack">
-        {user.emailVerified === false && <ConfirmEmail email={user.email} />}
+        {!user.emailVerified && <ConfirmEmail email={user.email} />}
         {step !== 'hats' && (
           <ol className="su-steps" aria-label={`Step ${path.indexOf(step) + 1} of ${path.length}`}>
             {path.map((s, i) => (
@@ -195,7 +195,7 @@ function PlacementStep({ andThen }: { andThen: (() => void) | null }) {
       <div className="row">
         <span className="spacer" />
         {andThen && <button onClick={andThen}>Next: set up your organization</button>}
-        <button className="primary" onClick={() => navigate('/v')} disabled={session!.user.emailVerified === false} title={session!.user.emailVerified === false ? 'Confirm your email first' : undefined}>
+        <button className="primary" onClick={() => navigate('/v')} disabled={!session!.user.emailVerified} title={!session!.user.emailVerified ? 'Confirm your email first' : undefined}>
           Start your first session
         </button>
       </div>
@@ -238,9 +238,9 @@ function DetailsStep({ type, onBack, onCreated }: { type: OrgType; onBack: () =>
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm({ ...form, [k]: e.target.value });
-  const verified = session!.user.emailVerified !== false;
+  const verified = session!.user.emailVerified;
 
-  // Look the EIN up (2B) as it's typed, so a match can fill in the name and state.
+  // Look the EIN up in the IRS list as it's typed, so a match can fill in the name and state.
   useEffect(() => {
     const digits = form.ein.replace(/\D/g, '');
     if (type !== 'nonprofit' || digits.length !== 9) return setMatch(null);

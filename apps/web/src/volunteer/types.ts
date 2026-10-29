@@ -1,4 +1,4 @@
-// Segment 1 contract: the volunteer card flow. The server (apps/server/src/routes/volunteer.ts) returns these
+// The volunteer card flow's API shapes. The server (apps/server/src/routes/volunteer.ts) returns these
 // shapes and the web app consumes them. See docs/segment-1-volunteer-cards.md. Change both sides together.
 import type { QueueItem } from '../api';
 import type { CardOrg } from '../contracts';
@@ -12,7 +12,7 @@ export interface Card {
   type: CardType;
   /** `sourceLocale` is the language the strings are written in (e.g. "en"), for labelling and plural examples. */
   project: { id: number; name: string; sourceLocale: string };
-  /** Who the card helps (Segment 2E). */
+  /** Who the card helps. */
   org: CardOrg;
   locale: string;
   /** Urgent strings come first in a session. */
@@ -27,10 +27,10 @@ export interface SessionResponse {
   empty: null | 'no_languages' | 'nothing_to_do';
 }
 
-/** GET and PUT /api/v1/volunteer/settings. `actions`: which card actions this server offers (2C's Flag, 2B's Report). */
+/** GET and PUT /api/v1/volunteer/settings. */
 export interface VolunteerSettings {
   nonprofitsOnly: boolean;
-  actions: { flag: boolean; report: boolean };
+  dailyGoal: DailyGoal;
 }
 
 export interface XpTotals {
@@ -48,6 +48,24 @@ export interface StatsResponse {
   approvedStrings: number;
   /** Distinct projects this volunteer has accepted work in. */
   projectsHelped: { id: number; name: string }[];
+  /** Days in a row with at least one card saved (pending counts), in the volunteer's time zone. */
+  streak: Streak;
+  /** Cards saved today (a string saved twice counts once) against the volunteer's goal. */
+  goal: { target: DailyGoal; done: number };
+}
+
+/** The daily goal choices, in cards. */
+export const DAILY_GOALS = [3, 5, 10, 20] as const;
+export type DailyGoal = (typeof DAILY_GOALS)[number];
+
+export interface Streak {
+  current: number;
+  /** A freeze covers a missed day. One is earned for every 7 active days in a streak, up to 2. */
+  freezes: number;
+  /** Today isn't a miss until it's over; this says whether it already counts. */
+  activeToday: boolean;
+  /** YYYY-MM-DD of the last day a freeze covered. */
+  lastFreezeUsed: string | null;
 }
 
 /**

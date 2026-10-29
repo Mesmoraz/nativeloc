@@ -242,7 +242,8 @@ with no help from us.
 
 **Goal:** volunteers come back, and organizations have control over who works on their content.
 
-- Streaks, daily goal, reminders, streak freezes.
+- Streaks, daily goal, streak freezes ([segment-3a-streaks.md](segment-3a-streaks.md)). Reminders moved to
+  Segment 4, with push.
 - Badges (§4).
 - More card types: **Pick the better one** and **Spot the problem** (gold checks in the normal queue).
 - Favorites, org-scoped Approved Reviewers, org leaderboards (opt-in), thank-you notes.
@@ -259,6 +260,7 @@ Approved Reviewers instead of checking every string itself.
 - React Native app with Expo for iOS and Android, sharing `@nativeloc/core` and API types.
 - The card flow, with native gestures, haptics and animations.
 - Push notifications; the urgent lane with an on-call rota.
+- Gentle streak reminders that can be turned off (moved from Segment 3: they need push).
 - A light requester view: progress, approve strings, post short text or a flyer photo.
 - Opt-in weekly leagues, once there are enough volunteers per language to fill them.
 

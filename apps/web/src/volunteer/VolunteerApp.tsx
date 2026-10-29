@@ -4,7 +4,7 @@ import { useSession } from '../App';
 import { ApiError } from '../api';
 import { ReviewCard, TranslateCard, type CardResult } from './Cards';
 import { isMock, volunteerClient, type VolunteerClient } from './client';
-import type { Card, SessionResponse, StatsResponse, VolunteerSettings, XpTotals } from './types';
+import { DAILY_GOALS, type Card, type DailyGoal, type SessionResponse, type StatsResponse, type VolunteerSettings, type XpTotals } from './types';
 import './volunteer.css';
 
 type Screen =
@@ -22,9 +22,8 @@ export function VolunteerApp() {
   const [pop, setPop] = useState<CardResult['xp'] | 'saved' | null>(null);
   const [error, setError] = useState('');
   const [starting, setStarting] = useState(false);
-  // No settings yet (or an older server): no filter, and no Flag or Report buttons.
+  // No settings yet: no filter.
   const [settings, setSettings] = useState<VolunteerSettings | null>(null);
-  const actions = settings?.actions ?? { flag: false, report: false };
 
   useEffect(() => {
     void volunteerClient().then(setClient);
@@ -46,6 +45,18 @@ export function VolunteerApp() {
     } catch {
       setSettings(settings);
       setError('Could not save the filter. Try again.');
+    }
+  }
+
+  async function changeDailyGoal(goal: DailyGoal) {
+    if (!client || !settings) return;
+    setSettings({ ...settings, dailyGoal: goal });
+    try {
+      setSettings(await client.setDailyGoal(goal));
+      loadStats();
+    } catch {
+      setSettings(settings);
+      setError('Could not save your goal. Try again.');
     }
   }
 
@@ -106,14 +117,14 @@ export function VolunteerApp() {
         )}
       </header>
 
-      {screen.name === 'home' && <Home stats={stats} empty={screen.empty} error={error} starting={starting || !client} onStart={() => void start()} settings={settings} onNonprofitsOnly={(on) => void toggleNonprofitsOnly(on)} />}
+      {screen.name === 'home' && <Home stats={stats} empty={screen.empty} error={error} starting={starting || !client} onStart={() => void start()} settings={settings} onNonprofitsOnly={(on) => void toggleNonprofitsOnly(on)} onDailyGoal={(g) => void changeDailyGoal(g)} />}
 
       {screen.name === 'session' && client && (
         <main className="v-card" key={screen.cards[screen.index].id}>
           {screen.cards[screen.index].type === 'review' ? (
-            <ReviewCard card={screen.cards[screen.index]} client={client} onDone={onCardDone} actions={actions} />
+            <ReviewCard card={screen.cards[screen.index]} client={client} onDone={onCardDone} />
           ) : (
-            <TranslateCard card={screen.cards[screen.index]} client={client} onDone={onCardDone} actions={actions} />
+            <TranslateCard card={screen.cards[screen.index]} client={client} onDone={onCardDone} />
           )}
           {pop && <XpPop xp={pop} />}
         </main>
@@ -168,6 +179,59 @@ function Xp({ totals, big = false }: { totals: XpTotals; big?: boolean }) {
   );
 }
 
+/** Yesterday on this device, as YYYY-MM-DD (the same calendar as the server's, once the time zone is saved). */
+const yesterday = () => new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(Date.now() - 86_400_000);
+
+/** Today's goal and the streak: what §4 of the platform vision puts above Start. */
+function StreakGoal({ stats }: { stats: StatsResponse }) {
+  const { streak, goal } = stats;
+  const met = goal.done >= goal.target;
+  return (
+    <div className="v-streak">
+      <div className="v-streak-row">
+        <span className="v-streak-count">{streak.current > 0 ? `🔥 ${streak.current}-day streak` : 'Start a streak with one card today'}</span>
+        <span className="v-freezes" title="A freeze covers a day you miss. You earn one for every 7 days in a row, up to 2.">
+          🧊 {streak.freezes}
+        </span>
+      </div>
+      {streak.lastFreezeUsed === yesterday() && <p className="small v-streak-note">A freeze covered yesterday. Your streak is safe.</p>}
+      {streak.current > 0 && !streak.activeToday && streak.lastFreezeUsed !== yesterday() && <p className="small muted v-streak-note">One card today keeps your streak going.</p>}
+      <GoalBar goal={goal} />
+      {met && <p className="small v-streak-note">Daily goal met 🎉</p>}
+    </div>
+  );
+}
+
+function GoalBar({ goal }: { goal: StatsResponse['goal'] }) {
+  return (
+    <div className="v-goal">
+      <div className="v-goal-bar" role="progressbar" aria-valuemin={0} aria-valuemax={goal.target} aria-valuenow={Math.min(goal.done, goal.target)} aria-label="Daily goal">
+        <span style={{ width: `${Math.min(100, (goal.done / goal.target) * 100)}%` }} />
+      </div>
+      <span className="small muted">{goal.done > goal.target ? `${goal.done} cards today · goal ${goal.target}` : `${goal.done} of ${goal.target} cards today`}</span>
+    </div>
+  );
+}
+
+function GoalPicker({ goal, onChange }: { goal: DailyGoal; onChange: (g: DailyGoal) => void }) {
+  return (
+    <div className="v-goal-picker">
+      <span>
+        <b>Daily goal</b>
+        <br />
+        <span className="small muted">Cards a day. One card keeps your streak.</span>
+      </span>
+      <div className="v-seg" role="radiogroup" aria-label="Daily goal">
+        {DAILY_GOALS.map((g) => (
+          <button key={g} role="radio" aria-checked={g === goal} className={g === goal ? 'on' : ''} onClick={() => g !== goal && onChange(g)}>
+            {g}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Home({
   stats,
   empty,
@@ -176,6 +240,7 @@ function Home({
   onStart,
   settings,
   onNonprofitsOnly,
+  onDailyGoal,
 }: {
   stats: StatsResponse | null;
   empty?: SessionResponse['empty'];
@@ -184,6 +249,7 @@ function Home({
   onStart: () => void;
   settings: VolunteerSettings | null;
   onNonprofitsOnly: (on: boolean) => void;
+  onDailyGoal: (goal: DailyGoal) => void;
 }) {
   const { session } = useSession();
   const firstName = session?.user.name.split(' ')[0];
@@ -194,6 +260,7 @@ function Home({
           <h1>{firstName ? `Hi ${firstName}` : 'Hi there'} 👋</h1>
           <p className="muted v-lead">Five short cards: translate or check a few lines of text for groups that serve people in your language.</p>
         </div>
+        {stats && <StreakGoal stats={stats} />}
         {stats && (
           <div className="v-stats">
             <div className="v-stat">
@@ -217,6 +284,7 @@ function Home({
             </span>
           </label>
         )}
+        {settings && <GoalPicker goal={settings.dailyGoal} onChange={onDailyGoal} />}
         {empty === 'no_languages' && (
           <div className="alert warn">
             You haven't picked a language yet. <Link to="/">Choose your languages</Link> to get cards.
@@ -267,6 +335,13 @@ function Summary({ cards, results, stats, starting, onAgain, onDone }: { cards: 
             </div>
           )}
         </div>
+        {stats && (
+          <div className="v-streak">
+            {stats.streak.current > 0 && <span className="v-streak-count">🔥 {stats.streak.current}-day streak</span>}
+            <GoalBar goal={stats.goal} />
+            {stats.goal.done >= stats.goal.target && <p className="small v-streak-note">Daily goal met 🎉</p>}
+          </div>
+        )}
         {earned.pending > 0 && <p className="small muted v-explain">{earned.pending} XP is waiting for review. It counts once another volunteer approves your work.</p>}
         {projects.length > 0 && (
           <div className="v-helped">

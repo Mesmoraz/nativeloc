@@ -1,5 +1,5 @@
-// Dev-only stand-in for the volunteer API (open /v?mock=1). Implements the contract in types.ts closely enough
-// to build and test the card flow before the server piece lands: sessions alternate Translate and Review,
+// Dev-only stand-in for the volunteer API (open /v?mock=1), for working on the card flow without a server.
+// It follows the contract in types.ts closely enough to be useful: sessions alternate Translate and Review,
 // saves validate like the server (422 with `issues`), and every save or approval returns an `xp` award.
 import { listPlaceholders, pluralExamples, targetTemplate, toEditorModel, validateTranslation } from '@nativeloc/core';
 import { ApiError, type QueueItem } from '../api';
@@ -64,6 +64,9 @@ function item(
     suggestions: [],
     questions: [],
     approvals: opts.approvals ?? null,
+    // Review items without a peer-approval count stand in for community review, so the Flag button shows.
+    review: opts.current && !opts.approvals ? { reviews: 1, approvals: 1, flags: 0, needed: 3, escalated: false } : null,
+    sentBack: null,
   };
 }
 
@@ -106,18 +109,27 @@ const byKey = new Map<number, { project: typeof FOOD_BANK; item: QueueItem }>(
 );
 
 let sessions = 0;
-const settings: VolunteerSettings = { nonprofitsOnly: false, actions: { flag: true, report: true } };
+const settings: VolunteerSettings = { nonprofitsOnly: false, dailyGoal: 5 };
 const stats: StatsResponse = {
   xp: { accepted: 140, pending: 20 },
   today: { accepted: 0, pending: 0 },
   approvedStrings: 12,
   projectsHelped: [FOOD_BANK],
+  streak: { current: 6, freezes: 0, activeToday: false, lastFreezeUsed: null },
+  goal: { target: 5, done: 0 },
 };
 
 const wait = (ms = 350) => new Promise((r) => setTimeout(r, ms));
 const rotate = <T,>(a: T[], n: number) => a.map((_, i) => a[(i + n) % a.length]);
 
+/** A card was saved: it counts toward today's goal and keeps the streak going. */
+function didCard() {
+  stats.goal.done += 1;
+  if (!stats.streak.activeToday) stats.streak = { ...stats.streak, current: stats.streak.current + 1, activeToday: true };
+}
+
 function award(points: number, status: 'pending' | 'accepted', project: typeof FOOD_BANK) {
+  didCard();
   stats.xp[status] += points;
   stats.today[status] += points;
   if (status === 'accepted' && !stats.projectsHelped.some((p) => p.id === project.id)) stats.projectsHelped.push({ id: project.id, name: project.name });
@@ -160,8 +172,16 @@ export const mockClient: VolunteerClient = {
     return structuredClone(settings);
   },
 
+  async setDailyGoal(goal) {
+    await wait(100);
+    settings.dailyGoal = goal;
+    stats.goal.target = goal;
+    return structuredClone(settings);
+  },
+
   async flag() {
     await wait();
+    didCard();
     return { status: 'review', review: { reviews: 1, approvals: 0, flags: 1, needed: 5, escalated: false }, xp: { points: XP.review, status: 'pending' } };
   },
 

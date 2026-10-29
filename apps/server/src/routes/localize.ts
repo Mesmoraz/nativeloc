@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { HttpError, projectAccess, requireUser } from '../auth.js';
 import { all, get, run, tx, type DB, type KeyRow } from '../db.js';
 import { approveTranslation, flagTranslation, queue, saveTranslation } from '../services.js';
+import { recordActivity } from '../streaks.js';
 import { checkLocale, intParam } from '../util.js';
 import { voidPending } from '../xp.js';
 
@@ -71,6 +72,7 @@ export function localizeRoutes(app: FastifyInstance, db: DB) {
       run(db, 'DELETE FROM votes WHERE key_id = ? AND locale = ?', key.id, locale);
       // Pending XP on the string goes with it; anything already accepted stays.
       voidPending(db, { projectId: key.project_id, keyId: key.id, locale });
+      recordActivity(db, member, 'review', { projectId: key.project_id, keyId: key.id, locale });
     });
     return { status: 'outdated' };
   });

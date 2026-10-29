@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { actorOf, createSession, hashPassword, HttpError, membershipsOf, type UserActor, randomToken, requireMember, requireUser, SESSION_COOKIE, sha256, verifyPassword } from '../auth.js';
-import { addMembership, all, get, getUser, memberOf, ROLES, run, tx, USER_COLUMNS, type DB, type OrgRow, type Role, type UserRow } from '../db.js';
+import { addMembership, all, get, getOrg, getUser, memberOf, ROLES, run, tx, USER_COLUMNS, type DB, type OrgRow, type Role, type UserRow } from '../db.js';
+import { saveTimeZone, timeZoneOf, validTimeZone } from '../streaks.js';
 import { setTier, tierOf, tiersOf, TIERS, vouchFor, type Tier } from '../trust.js';
 import { checkLocale } from '../util.js';
 import { orgMayVouch } from '../signup/gate.js';
@@ -28,8 +29,8 @@ export function publicUser(db: DB, u: UserRow, orgId?: number | null) {
 
 /** GET /api/v1/me: the signed-in user, the org this sign-in works in (`org`, null when they have none) and all their orgs. */
 export function meResponse(db: DB, actor: UserActor) {
-  const orgs = actor.memberships.map((m) => ({ ...orgJson(get<OrgRow>(db, 'SELECT * FROM orgs WHERE id = ?', m.orgId)!), role: m.role }));
-  return { user: publicUser(db, actor.user, actor.current?.orgId), org: orgs.find((o) => o.id === actor.current?.orgId) ?? null, orgs };
+  const orgs = actor.memberships.map((m) => ({ ...orgJson(getOrg(db, m.orgId)!), role: m.role }));
+  return { user: publicUser(db, actor.user, actor.current?.orgId), org: orgs.find((o) => o.id === actor.current?.orgId) ?? null, orgs, timeZone: timeZoneOf(db, actor.user.id) };
 }
 
 /** Makes `orgId` the org this sign-in works in. */
@@ -75,6 +76,15 @@ export function authRoutes(app: FastifyInstance, db: DB) {
   const me = (actor: UserActor) => meResponse(db, actor);
 
   app.get('/api/v1/me', async (req) => me(requireUser(db, req)));
+
+  /** The browser's time zone, so streak days are the volunteer's own (streaks.ts). The web app sends it when it changes. */
+  app.put<{ Body: { timeZone?: unknown } }>('/api/v1/me/time-zone', async (req) => {
+    const { user } = requireUser(db, req);
+    const tz = req.body?.timeZone;
+    if (!validTimeZone(tz)) throw new HttpError(400, "That isn't a time zone we know.");
+    saveTimeZone(db, user.id, tz);
+    return { timeZone: tz };
+  });
 
   /** Switch the org this sign-in works in. */
   app.put<{ Body: { orgId?: number } }>('/api/v1/me/org', async (req) => {

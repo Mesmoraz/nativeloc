@@ -30,7 +30,7 @@ export interface AppOptions {
   allowPrivateSites?: boolean;
 }
 
-/** What the Segment 2 piece route modules get. */
+/** What the feature route modules (sign-up, staff, community review, posting) get. */
 export interface RouteDeps {
   db: DB;
   dataDir: string;
@@ -61,7 +61,6 @@ export async function buildApp(opts: AppOptions) {
   volunteerRoutes(app, db);
   bundleRoutes(app, db);
   hostedRoutes(app, { db, fetch: opts.fetch, allowPrivate: opts.allowPrivateSites });
-  // Segment 2 pieces (2A sign-up, 2B staff, 2C community review, 2D posting); 2E extends volunteerRoutes.
   const deps: RouteDeps = { db, dataDir: opts.dataDir, screenshotDir };
   signupRoutes(app, deps);
   staffRoutes(app, deps);

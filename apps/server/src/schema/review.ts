@@ -1,11 +1,11 @@
-import type { PieceSchema } from '../db.js';
+import type { FeatureSchema } from '../db.js';
 
 /**
- * Owned by Segment 2 piece 2C (community review engine: review votes with Flag, escalation). Tables and columns this piece adds go here, never in db.ts.
+ * Community review: review votes with Flag, escalation, send-back notes and quality labels.
  * Runs on every start after the core schema: use CREATE ... IF NOT EXISTS, and guard ALTERs with PRAGMA table_info.
  * Use db.exec / db.prepare directly (db.ts imports this file, so don't rely on its helpers at load time).
  */
-export const schema: PieceSchema = {
+export const schema: FeatureSchema = {
   sql: `
 -- Community review (review_mode 'community'): every review of a translation in the current round, across edits.
 -- A round starts when text is submitted for review and ends when it is approved (the next save starts a new one).

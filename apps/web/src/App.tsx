@@ -12,6 +12,7 @@ import { Join } from './pages/Join';
 import { Login } from './pages/Login';
 import { Placement } from './pages/Placement';
 import { postingRoutes } from './posting/routes';
+import { certificateRoutes } from './certificates/routes';
 import { AccountMenu } from './signup/AccountMenu';
 import { signupRoutes } from './signup/routes';
 import { staffRoutes } from './staff/routes';
@@ -102,6 +103,7 @@ export function App() {
       <Routes>
         <Route path="/invite/:token" element={<Invite />} />
         <Route path="/join/:code" element={<Join />} />
+        {certificateRoutes()}
         {/* The dev mock (?mock=1) runs the card flow without signing in. */}
         {isMock && <Route path="/v" element={<VolunteerApp />} />}
         {/* Each feature folder lists its own pages. */}

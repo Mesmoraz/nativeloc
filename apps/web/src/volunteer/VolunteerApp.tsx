@@ -2,15 +2,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSession } from '../App';
 import { ApiError } from '../api';
+import { Achievements } from './Achievements';
+import { BADGE_INFO, badgeLabel } from './badges';
 import { ReviewCard, TranslateCard, type CardResult } from './Cards';
 import { isMock, volunteerClient, type VolunteerClient } from './client';
-import { DAILY_GOALS, type Card, type DailyGoal, type SessionResponse, type StatsResponse, type VolunteerSettings, type XpTotals } from './types';
+import { DAILY_GOALS, type BadgeId, type Card, type DailyGoal, type SessionResponse, type StatsResponse, type VolunteerSettings, type XpTotals } from './types';
 import './volunteer.css';
 
 type Screen =
   | { name: 'home'; empty?: SessionResponse['empty'] }
   | { name: 'session'; cards: Card[]; index: number; results: CardResult[] }
-  | { name: 'summary'; cards: Card[]; results: CardResult[] };
+  | { name: 'summary'; cards: Card[]; results: CardResult[] }
+  | { name: 'achievements' };
 
 const reducedMotion = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
@@ -117,7 +120,9 @@ export function VolunteerApp() {
         )}
       </header>
 
-      {screen.name === 'home' && <Home stats={stats} empty={screen.empty} error={error} starting={starting || !client} onStart={() => void start()} settings={settings} onNonprofitsOnly={(on) => void toggleNonprofitsOnly(on)} onDailyGoal={(g) => void changeDailyGoal(g)} />}
+      {screen.name === 'home' && <Home stats={stats} empty={screen.empty} error={error} starting={starting || !client} onStart={() => void start()} settings={settings} onNonprofitsOnly={(on) => void toggleNonprofitsOnly(on)} onDailyGoal={(g) => void changeDailyGoal(g)} onAchievements={() => setScreen({ name: 'achievements' })} client={client} />}
+
+      {screen.name === 'achievements' && client && <Achievements stats={stats} client={client} onBack={() => setScreen({ name: 'home' })} />}
 
       {screen.name === 'session' && client && (
         <main className="v-card" key={screen.cards[screen.index].id}>
@@ -130,7 +135,7 @@ export function VolunteerApp() {
         </main>
       )}
 
-      {screen.name === 'summary' && <Summary cards={screen.cards} results={screen.results} stats={stats} starting={starting} onAgain={() => void start()} onDone={() => setScreen({ name: 'home' })} />}
+      {screen.name === 'summary' && <Summary cards={screen.cards} results={screen.results} stats={stats} client={client} starting={starting} onAgain={() => void start()} onDone={() => setScreen({ name: 'home' })} />}
     </div>
   );
 }
@@ -202,6 +207,45 @@ function StreakGoal({ stats }: { stats: StatsResponse }) {
   );
 }
 
+/**
+ * Badges the app hasn't shown yet, celebrated once: they're marked seen as soon as this appears, so the banner stays
+ * until stats next load and then doesn't come back.
+ */
+function NewBadges({ stats, client }: { stats: StatsResponse; client: VolunteerClient | null }) {
+  const fresh = stats.badges.filter((b) => b.new);
+  const ids = fresh.map((b) => b.id).join(',');
+  useEffect(() => {
+    if (ids && client) client.markBadgesSeen(ids.split(',') as BadgeId[]).catch(() => {});
+  }, [ids, client]);
+  if (!fresh.length) return null;
+  return (
+    <div className="v-new-badge" role="status">
+      {fresh.map((b) => (
+        <div key={b.id}>
+          <span className="v-badge-emoji" aria-hidden>
+            {BADGE_INFO[b.id].emoji}
+          </span>{' '}
+          New badge: <b>{badgeLabel(b)}</b>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Earned badges in a row, and the way to all of them and to certificates. */
+function BadgeRow({ stats, onOpen }: { stats: StatsResponse; onOpen: () => void }) {
+  return (
+    <button className="v-badge-row" onClick={onOpen}>
+      <span className="v-badge-row-emoji" aria-hidden>
+        {stats.badges.length ? stats.badges.map((b) => BADGE_INFO[b.id].emoji).join(' ') : '🏅'}
+      </span>
+      <span className="small">
+        {stats.badges.length ? `${stats.badges.length} badge${stats.badges.length === 1 ? '' : 's'}` : 'Badges'} &amp; volunteer hours ›
+      </span>
+    </button>
+  );
+}
+
 function GoalBar({ goal }: { goal: StatsResponse['goal'] }) {
   return (
     <div className="v-goal">
@@ -241,6 +285,8 @@ function Home({
   settings,
   onNonprofitsOnly,
   onDailyGoal,
+  onAchievements,
+  client,
 }: {
   stats: StatsResponse | null;
   empty?: SessionResponse['empty'];
@@ -250,6 +296,8 @@ function Home({
   settings: VolunteerSettings | null;
   onNonprofitsOnly: (on: boolean) => void;
   onDailyGoal: (goal: DailyGoal) => void;
+  onAchievements: () => void;
+  client: VolunteerClient | null;
 }) {
   const { session } = useSession();
   const firstName = session?.user.name.split(' ')[0];
@@ -260,7 +308,9 @@ function Home({
           <h1>{firstName ? `Hi ${firstName}` : 'Hi there'} 👋</h1>
           <p className="muted v-lead">Five short cards: translate or check a few lines of text for groups that serve people in your language.</p>
         </div>
+        {stats && <NewBadges stats={stats} client={client} />}
         {stats && <StreakGoal stats={stats} />}
+        {stats && <BadgeRow stats={stats} onOpen={onAchievements} />}
         {stats && (
           <div className="v-stats">
             <div className="v-stat">
@@ -306,7 +356,7 @@ function Home({
   );
 }
 
-function Summary({ cards, results, stats, starting, onAgain, onDone }: { cards: Card[]; results: CardResult[]; stats: StatsResponse | null; starting: boolean; onAgain: () => void; onDone: () => void }) {
+function Summary({ cards, results, stats, client, starting, onAgain, onDone }: { cards: Card[]; results: CardResult[]; stats: StatsResponse | null; client: VolunteerClient | null; starting: boolean; onAgain: () => void; onDone: () => void }) {
   const done = results.map((r, i) => ({ r, card: cards[i] })).filter(({ r }) => r.outcome === 'done');
   const earned: XpTotals = { accepted: 0, pending: 0 };
   for (const { r } of done) if (r.xp) earned[r.xp.status] += r.xp.points;
@@ -323,6 +373,7 @@ function Summary({ cards, results, stats, starting, onAgain, onDone }: { cards: 
             {done.length} of {cards.length} card{cards.length === 1 ? '' : 's'} done
           </p>
         </div>
+        {stats && <NewBadges stats={stats} client={client} />}
         <div className="v-stats">
           <div className="v-stat">
             <span className="small muted">This session</span>

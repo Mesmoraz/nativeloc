@@ -16,13 +16,13 @@ export function seedStreaks(db: DB, demo: Demo) {
   const today = localDay(null);
   const ago = (n: number) => new Date(Date.parse(`${today}T00:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);
   const keys = all<{ id: number; project_id: number }>(db, 'SELECT id, project_id FROM keys WHERE project_id = ? ORDER BY id', demo.projects.pantry.id);
-  const act = (userId: number, daysAgo: number, role: string, cards = 2) => {
+  const act = (userId: number, daysAgo: number, role: string, cards = 2, locale = 'es') => {
     for (let i = 0; i < cards; i++) {
       const k = keys[(daysAgo * 3 + i) % keys.length];
       run(
         db,
-        "INSERT OR IGNORE INTO volunteer_activity (user_id, day, kind, key_id, locale, project_id, role) VALUES (?, ?, 'translate', ?, 'es', ?, ?)",
-        userId, ago(daysAgo), k.id, k.project_id, role,
+        "INSERT OR IGNORE INTO volunteer_activity (user_id, day, kind, key_id, locale, project_id, role) VALUES (?, ?, 'translate', ?, ?, ?, ?)",
+        userId, ago(daysAgo), k.id, locale, k.project_id, role,
       );
     }
   };
@@ -36,7 +36,7 @@ export function seedStreaks(db: DB, demo: Demo) {
 
   // Two days a week, skipping a few weeks.
   for (const week of [1, 2, 3, 5, 6, 8]) for (const d of [1, 4]) act(sam, week * 7 + d, 'localizer');
-  for (const week of [2, 4, 6, 8]) act(yuki, week * 7 + 2, 'localizer', 3);
+  for (const week of [2, 4, 6, 8]) act(yuki, week * 7 + 2, 'localizer', 3, 'ja');
 
   for (let d = 1; d <= 63; d++) if (![0, 6].includes(new Date(`${ago(d)}T00:00:00Z`).getUTCDay())) act(lucas, d, 'reviewer', 3);
 }

@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { hashPassword, sha256 } from './auth.js';
 import { addMembership, get, getUser, memberOf, openDb, run, type ProjectRow, type Role } from './db.js';
 import { vouchFor } from './trust.js';
+import { seedBadges } from './seed/badges.js';
 import { seedModeration } from './seed/moderation.js';
 import { seedPool } from './seed/pool.js';
 import { seedPosting } from './seed/posting.js';
@@ -220,8 +221,8 @@ submit('fr', {
 
 // Demo data for each feature, from its own file in seed/.
 const demo: Demo = { orgId, users: { admin, lucas, maria, yuki, sam }, projects: { kiosk, scale, signage, pantry } };
-// Streaks run last: they build on the activity the others recorded.
-for (const seedFeature of [seedSignup, seedModeration, seedReview, seedPosting, seedPool, seedStreaks]) seedFeature(db, demo);
+// Streaks, then badges, run last: they build on the activity and work the others recorded.
+for (const seedFeature of [seedSignup, seedModeration, seedReview, seedPosting, seedPool, seedStreaks, seedBadges]) seedFeature(db, demo);
 
 // Publish v1 of every project so devices have bundles to download immediately.
 for (const p of [kiosk, scale, signage, pantry]) publish(db, get<ProjectRow>(db, 'SELECT * FROM projects WHERE id = ?', p.id)!);

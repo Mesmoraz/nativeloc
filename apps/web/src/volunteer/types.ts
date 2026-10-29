@@ -52,6 +52,20 @@ export interface StatsResponse {
   streak: Streak;
   /** Cards saved today (a string saved twice counts once) against the volunteer's goal. */
   goal: { target: DailyGoal; done: number };
+  /** Badges earned, oldest first. Checked for new ones on every stats load. */
+  badges: EarnedBadge[];
+}
+
+/** Server badge ids (apps/server/src/badges.ts). Names and wording are in badges.ts next to this file. */
+export type BadgeId = 'approved_1' | 'approved_100' | 'approved_1000' | 'bridge_builder' | 'trusted' | 'lead' | 'rare_voice' | 'eagle_eye' | 'first_responder';
+
+export interface EarnedBadge {
+  id: BadgeId;
+  /** The language, for rare_voice. */
+  detail: string | null;
+  earnedAt: string;
+  /** Not shown yet: celebrate once, then POST /volunteer/badges/seen. */
+  new: boolean;
 }
 
 /** The daily goal choices, in cards. */
@@ -78,3 +92,31 @@ export interface XpAward {
 
 /** Point values. The server is the source of truth; the web app may use these for animations. */
 export const XP = { translate: 10, review: 5 } as const;
+
+/**
+ * POST/GET /api/v1/volunteer/certificates and the public GET /api/v1/certificates/:code. Hours are estimated from
+ * accepted work at `rates` (minutes per card), in halves. The verify link is /certificate/<code> on this site.
+ */
+export interface Certificate {
+  code: string;
+  name: string;
+  periodFrom: string | null;
+  periodTo: string;
+  hours: number;
+  translations: number;
+  reviews: number;
+  orgs: string[];
+  rates: { version: string; translate: number; review: number };
+  issuedAt: string;
+  revokedAt: string | null;
+}
+/** The public read of a revoked certificate: no numbers, just that it was withdrawn. */
+export interface RevokedCertificate {
+  code: string;
+  revoked: true;
+  name: string;
+  periodFrom: string | null;
+  periodTo: string;
+  issuedAt: string;
+  revokedAt: string;
+}

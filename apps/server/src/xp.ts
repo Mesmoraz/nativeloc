@@ -1,3 +1,4 @@
+import { awardBadges, badgesOf } from './badges.js';
 import { all, get, run, type DB } from './db.js';
 import { dailyGoalOf, localDay, localMidnightUtc, streakOf, timeZoneOf } from './streaks.js';
 
@@ -163,6 +164,7 @@ export function stats(db: DB, userId: number, now = Date.now()) {
   const tz = timeZoneOf(db, userId);
   const today = localDay(tz, now);
   const activeDays = all<{ day: string }>(db, 'SELECT DISTINCT day FROM volunteer_activity WHERE user_id = ?', userId).map((r) => r.day);
+  awardBadges(db, userId, now);
   return {
     xp: totals(db, userId),
     today: totals(db, userId, localMidnightUtc(tz, now)),
@@ -171,6 +173,7 @@ export function stats(db: DB, userId: number, now = Date.now()) {
       target: dailyGoalOf(db, userId),
       done: get<{ n: number }>(db, 'SELECT COUNT(*) AS n FROM volunteer_activity WHERE user_id = ? AND day = ?', userId, today)!.n,
     },
+    badges: badgesOf(db, userId),
     approvedStrings: get<{ n: number }>(
       db,
       "SELECT COUNT(*) AS n FROM (SELECT DISTINCT key_id, locale FROM xp_events WHERE user_id = ? AND kind = 'translate' AND status = 'accepted')",

@@ -1,0 +1,32 @@
+/* /certificate/:code: on screen a sheet on the page background; in print, just the sheet (A4 or Letter). */
+.cert-page { min-height: 100vh; padding: 24px 16px 48px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.cert-tools { width: 100%; max-width: 760px; display: flex; justify-content: flex-end; }
+.cert-sheet { width: 100%; max-width: 760px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 48px 56px; display: flex; flex-direction: column; gap: 14px; }
+.cert-problem { gap: 8px; }
+.cert-problem h1 { margin: 0; }
+.cert-head { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+.cert-kicker { margin: 18px 0 0; text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.85rem; color: var(--muted); }
+.cert-name { margin: 0; font-size: 2.4rem; line-height: 1.15; overflow-wrap: anywhere; }
+.cert-lede { margin: 0; font-size: 1.1rem; }
+.cert-hours { margin: 10px 0 0; font-size: 1.3rem; }
+.cert-hours-num { font-size: 3.2rem; font-weight: 800; color: var(--accent); margin-right: 8px; }
+.cert-period { margin: 0; color: var(--muted); }
+.cert-orgs h2, .cert-method h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 10px 0 4px; }
+.cert-orgs p, .cert-method p { margin: 0; }
+.cert-foot { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 0.9rem; color: var(--muted); }
+.cert-url { color: var(--text); overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .cert-sheet { padding: 28px 20px; }
+  .cert-name { font-size: 1.8rem; }
+  .cert-hours-num { font-size: 2.6rem; }
+}
+@media print {
+  @page { margin: 18mm; }
+  body { background: #fff !important; }
+  .demo-banner, .cert-tools { display: none !important; }
+  .cert-page { padding: 0; min-height: 0; }
+  .cert-sheet { max-width: none; border: none; box-shadow: none; padding: 0; background: #fff; color: #000; }
+  .cert-hours-num { color: #000; }
+  .cert-kicker, .cert-period, .cert-orgs h2, .cert-method h2, .cert-foot { color: #444; }
+  .cert-url { color: #000; }
+}

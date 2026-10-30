@@ -1,7 +1,7 @@
 // The order volunteers get cards in. Tune it here, in one place.
 //
 // A card's score is in hours: how long the string has waited (capped), plus boosts. A volunteer's session takes the
-// highest-scoring cards. New rankers (campaign deadlines, say) add their own entries to BOOSTS.
+// highest-scoring cards. New rankers add their own entries to BOOSTS.
 
 export type ProjectPriority = 'low' | 'normal' | 'high';
 export const PRIORITIES: ProjectPriority[] = ['low', 'normal', 'high'];
@@ -28,14 +28,17 @@ export interface Candidate {
   verifiedNonprofit: boolean;
   /** The org has made this volunteer a favorite. */
   favorite?: boolean;
+  /** Hours from a campaign's approaching deadline (campaigns.ts: deadlineBoost), 0 to 72. */
+  campaignBoost?: number;
 }
 
-/** Each boost adds hours to the score. Add more (campaign deadlines, say) by pushing to this list. */
+/** Each boost adds hours to the score. Add more by pushing to this list. */
 export const BOOSTS: ((c: Candidate) => number)[] = [
   (c) => (c.urgent ? WEIGHTS.urgent : 0),
   (c) => WEIGHTS.priority[c.priority] ?? 0,
   (c) => (c.verifiedNonprofit ? WEIGHTS.verifiedNonprofit : 0),
   (c) => (c.favorite ? WEIGHTS.favorite : 0),
+  (c) => c.campaignBoost ?? 0,
 ];
 
 /** Hours since a SQLite timestamp ('YYYY-MM-DD HH:MM:SS', UTC). Unreadable or future times count as 0. */

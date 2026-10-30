@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import { createRequire } from 'node:module';
 import type { DatabaseSync as DatabaseSyncT } from 'node:sqlite';
 import { schema as badgesSchema } from './schema/badges.js';
+import { schema as campaignsSchema } from './schema/campaigns.js';
 import { schema as cardsSchema } from './schema/cards.js';
 import { schema as moderationSchema } from './schema/moderation.js';
 import { schema as orgVolunteersSchema } from './schema/orgVolunteers.js';
@@ -401,7 +402,7 @@ export interface FeatureSchema {
   sql?: string;
   migrate?: (db: DB) => void;
 }
-const FEATURE_SCHEMAS: FeatureSchema[] = [signupSchema, moderationSchema, reviewSchema, postingSchema, poolSchema, streaksSchema, badgesSchema, cardsSchema, orgVolunteersSchema];
+const FEATURE_SCHEMAS: FeatureSchema[] = [signupSchema, moderationSchema, reviewSchema, postingSchema, poolSchema, streaksSchema, badgesSchema, cardsSchema, orgVolunteersSchema, campaignsSchema];
 
 type Param = string | number | bigint | null | Uint8Array;
 

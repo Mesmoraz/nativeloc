@@ -109,7 +109,7 @@ const byKey = new Map<number, { project: typeof FOOD_BANK; item: QueueItem }>(
 );
 
 let sessions = 0;
-const settings: VolunteerSettings = { nonprofitsOnly: false, dailyGoal: 5 };
+const settings: VolunteerSettings = { nonprofitsOnly: false, dailyGoal: 5, showOnLeaderboards: false };
 const certificates: Certificate[] = [];
 const stats: StatsResponse = {
   xp: { accepted: 140, pending: 20 },
@@ -126,7 +126,12 @@ const stats: StatsResponse = {
   messages: [
     { id: 1, kind: 'favorite', org: { id: 11, name: 'Riverside Food Bank' }, project: null, body: null, createdAt: '2026-10-20 17:00:00' },
     { id: 2, kind: 'thanks', org: { id: 11, name: 'Riverside Food Bank' }, project: { id: 1, name: 'Riverside Food Bank' }, body: 'Thank you! Our hours page is now in Spanish.', createdAt: '2026-10-21 17:00:00' },
+    { id: 3, kind: 'launch', org: { id: 11, name: 'Riverside Food Bank' }, project: { id: 1, name: 'Pantry hours page' }, body: 'es', createdAt: '2026-10-22 17:00:00' },
   ],
+  campaigns: [
+    { id: 1, name: 'Get the delivery page live', project: { id: 1, name: 'Delivery page' }, org: { id: 11, name: 'Riverside Food Bank' }, deadline: '2026-11-07', daysLeft: 2, locales: [{ locale: 'es', total: 24, approved: 11, launched: false }] },
+  ],
+  languageBars: [{ locale: 'es', campaigns: 1, total: 24, approved: 11 }],
 };
 
 const wait = (ms = 350) => new Promise((r) => setTimeout(r, ms));
@@ -260,6 +265,23 @@ export const mockClient: VolunteerClient = {
     await wait();
     didCard();
     return { status: decision === 'publish' ? 'approved' : 'review', xp: { points: 5, status: 'accepted' } };
+  },
+
+  async setShowOnLeaderboards(on) {
+    await wait(100);
+    settings.showOnLeaderboards = on;
+    return structuredClone(settings);
+  },
+
+  async leaderboards() {
+    await wait(150);
+    const month = new Date().toISOString().slice(0, 7);
+    const top = [
+      { name: 'Ana R.', words: 412 },
+      ...(settings.showOnLeaderboards ? [{ name: 'Mock V.', words: 230 }] : []),
+      { name: 'Luis M.', words: 96 },
+    ];
+    return [{ org: { id: 11, name: 'Riverside Food Bank' }, month, top, others: settings.showOnLeaderboards ? 3 : 4, totalWords: 1130, you: settings.showOnLeaderboards ? { words: 230, place: 2 } : null }];
   },
 
   async markMessagesSeen(ids) {

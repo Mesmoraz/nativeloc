@@ -70,6 +70,7 @@ interface Source {
   org: OrgRow;
   member: Member;
   favorite: boolean;
+  campaign: unknown;
 }
 
 export interface DealtSpot {

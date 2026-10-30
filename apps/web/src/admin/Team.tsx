@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError, type JoinLink, type Project, type Tier, type User } from '../api';
-import type { OrgVolunteer, ThanksStatus } from '../contracts';
+import type { Leaderboard, OrgVolunteer, ThanksStatus } from '../contracts';
 import { languageName, nativeLanguageName } from '../types';
 
 export function Team({ project }: { project: Project }) {
@@ -27,6 +27,7 @@ export function Team({ project }: { project: Project }) {
   return (
     <div className="stack" style={{ gap: 20 }}>
       <ThankVolunteers project={project} />
+      <TopTranslators />
       <HelpedVolunteers project={project} />
       <VolunteerLinks project={project} />
 
@@ -430,5 +431,50 @@ function ThankVolunteers({ project }: { project: Project }) {
       {blocked && <p className="small muted" style={{ margin: 0 }}>{blocked}</p>}
       {error && <div className="alert error">{error}</div>}
     </form>
+  );
+}
+
+/** The org's leaderboard: volunteers who opted in, by accepted translated words (docs/segment-3e-campaigns-leaderboards.md). */
+function TopTranslators() {
+  const months = (() => {
+    const d = new Date();
+    return [d.toISOString().slice(0, 7), new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1)).toISOString().slice(0, 7)];
+  })();
+  const [month, setMonth] = useState(months[0]);
+  const [board, setBoard] = useState<Leaderboard | null>(null);
+  useEffect(() => {
+    api<Leaderboard>(`/api/v1/org/leaderboard?month=${month}`).then(setBoard, () => setBoard(null));
+  }, [month]);
+  const label = (m: string) => new Date(`${m}-01T00:00:00Z`).toLocaleDateString(undefined, { month: 'long', timeZone: 'UTC' });
+  if (!board) return null;
+  return (
+    <div className="card stack">
+      <div className="row">
+        <h2 style={{ margin: 0 }}>Top translators</h2>
+        <span className="spacer" />
+        <select value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month">
+          {months.map((m) => (
+            <option key={m} value={m}>
+              {label(m)}
+            </option>
+          ))}
+        </select>
+      </div>
+      {board.top.length ? (
+        <ol style={{ margin: 0 }}>
+          {board.top.map((t, i) => (
+            <li key={i}>
+              {t.name} · {t.words.toLocaleString()} words
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="muted" style={{ margin: 0 }}>No one has opted in to appear yet.</p>
+      )}
+      <p className="small muted" style={{ margin: 0 }}>
+        {board.others > 0 ? `And ${board.others} more volunteer${board.others === 1 ? '' : 's'}. ` : ''}
+        {board.totalWords.toLocaleString()} approved words in {label(board.month)}. Volunteers choose whether they’re named here.
+      </p>
+    </div>
   );
 }

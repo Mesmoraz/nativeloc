@@ -19,14 +19,14 @@ CREATE TABLE IF NOT EXISTS org_volunteers (
 );
 CREATE INDEX IF NOT EXISTS org_volunteers_user ON org_volunteers(user_id);
 
--- What orgs tell volunteers: thank-yous, and that they were made a favorite or an Approved Reviewer. Shown once on
--- the home screen, like new badges.
+-- What orgs tell volunteers: thank-yous, that they were made a favorite or an Approved Reviewer, and campaign launches
+-- (campaigns.ts). Shown once on the home screen, like new badges.
 CREATE TABLE IF NOT EXISTS volunteer_messages (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   org_id INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
   project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('thanks', 'favorite', 'approved_reviewer')),
+  kind TEXT NOT NULL CHECK (kind IN ('thanks', 'favorite', 'approved_reviewer', 'launch')),
   body TEXT,                     -- the note, for 'thanks'
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   seen_at TEXT

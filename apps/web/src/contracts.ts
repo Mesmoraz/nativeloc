@@ -265,3 +265,30 @@ export interface ProjectTab {
   label: string;
   render: (props: { project: import('./api').Project; reload: () => Promise<void> }) => React.ReactNode;
 }
+
+// ---------- campaigns and leaderboards (docs/segment-3e-campaigns-leaderboards.md) ----------
+
+/** GET /api/v1/projects/:id/campaign → { active, past }; POST { name?, locales, deadline } and DELETE return one. */
+export interface CampaignView {
+  id: number;
+  projectId: number;
+  name: string;
+  /** YYYY-MM-DD; the campaign runs to the end of that day (UTC). */
+  deadline: string;
+  /** Calendar days: due tomorrow is 1, due today is 0. */
+  daysLeft: number;
+  createdAt: string;
+  endedAt: string | null;
+  endedReason: 'launched' | 'deadline' | 'cancelled' | null;
+  /** Approved and ready (agreed, waiting for your click) out of the project's strings, per language. */
+  locales: { locale: string; total: number; approved: number; ready: number; launchedAt: string | null }[];
+}
+
+/** GET /api/v1/org/leaderboard?month=YYYY-MM (this month or last). Only volunteers who opted in are named. */
+export interface Leaderboard {
+  month: string;
+  top: { name: string; words: number }[];
+  /** Everyone else with accepted words that month. */
+  others: number;
+  totalWords: number;
+}

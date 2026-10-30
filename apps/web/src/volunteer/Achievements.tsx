@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ApiError } from '../api';
 import { BADGE_INFO, BADGE_ORDER, languageName, shortDate } from './badges';
 import type { VolunteerClient } from './client';
-import type { Certificate, StatsResponse } from './types';
+import type { Certificate, StatsResponse, VolunteerBoard } from './types';
 
 /** The link a school or employer opens to check a certificate (works signed out). */
 export const certificateUrl = (code: string) => `${window.location.origin}${import.meta.env.BASE_URL}certificate/${code}`;
@@ -99,6 +99,8 @@ export function Achievements({ stats, client, onBack }: { stats: StatsResponse |
           </ul>
         </section>
 
+        <Leaderboards client={client} />
+
         <section className="v-certs">
           <h2 className="v-section">Volunteer hours</h2>
           <p className="small muted">
@@ -159,5 +161,65 @@ export function Achievements({ stats, client, onBack }: { stats: StatsResponse |
         </button>
       </div>
     </>
+  );
+}
+
+/** This month's board for each org you've translated for, and the opt-in that puts your name on them. */
+function Leaderboards({ client }: { client: VolunteerClient }) {
+  const [boards, setBoards] = useState<VolunteerBoard[] | null>(null);
+  const [on, setOn] = useState<boolean | null>(null);
+  const load = () => client.leaderboards().then(setBoards, () => setBoards([]));
+  useEffect(() => {
+    void load();
+    client.settings().then((s) => setOn(s.showOnLeaderboards), () => setOn(false));
+  }, [client]);
+
+  async function toggle(next: boolean) {
+    setOn(next);
+    try {
+      setOn((await client.setShowOnLeaderboards(next)).showOnLeaderboards);
+      await load();
+    } catch {
+      setOn(!next);
+    }
+  }
+
+  return (
+    <section className="v-certs">
+      <h2 className="v-section">Leaderboards</h2>
+      {on !== null && (
+        <label className="v-filter">
+          <input type="checkbox" checked={on} onChange={(e) => void toggle(e.target.checked)} />
+          <span>
+            <b>Show me on leaderboards</b>
+            <br />
+            <span className="small muted">Only the organizations you translate for see them, and only as your first name and last initial.</span>
+          </span>
+        </label>
+      )}
+      {boards && !boards.length && <p className="small muted">Leaderboards appear once your translations for an organization are approved.</p>}
+      {boards?.map((b) => (
+        <div key={b.org.id} className="v-board">
+          <b>Top translators for {b.org.name} this month</b>
+          {b.top.length ? (
+            <ol>
+              {b.top.map((t, i) => (
+                <li key={i} className={b.you?.place === i + 1 ? 'you' : ''}>
+                  {t.name} · {t.words.toLocaleString()} words
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <span className="small muted">Nobody has opted in yet.</span>
+          )}
+          {b.others > 0 && (
+            <span className="small muted">
+              and {b.others} more volunteer{b.others === 1 ? '' : 's'} · {b.totalWords.toLocaleString()} words in all
+            </span>
+          )}
+          {b.you && b.you.place === null && <span className="small muted">You haven’t translated for them this month yet.</span>}
+        </div>
+      ))}
+    </section>
   );
 }

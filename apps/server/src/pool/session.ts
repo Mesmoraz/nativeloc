@@ -1,6 +1,7 @@
 import { all, getOrg, type DB, type Member, type OrgRow, type ProjectRow, type Role, type UserRow } from '../db.js';
 import { projectLocales, queue, reviewFilter, reviewRight } from '../services.js';
 import { isVerifiedNonprofit, openPoolRole, passesNonprofitsOnly } from './access.js';
+import { activeCampaign, campaignLocales, campaignView, deadlineBoost, type CampaignRow } from '../campaigns.js';
 import { finalCandidates, finalCard } from '../cards/final.js';
 import { pickCandidates, pickCard } from '../cards/pick.js';
 import { dealSpot } from '../cards/spot.js';
@@ -26,6 +27,8 @@ interface CardBase {
   locale: string;
   /** The string is marked urgent. */
   urgent: boolean;
+  /** The project's campaign, when it covers this language and hasn't launched it yet. */
+  campaign: ReturnType<typeof campaignLine>;
 }
 type WorkCard = CardBase & { type: 'translate' | 'review'; item: Item };
 /** Spot the problem (cards/spot.ts): no real work, a check with a known answer. */
@@ -48,10 +51,12 @@ interface Source {
   member: Member;
   /** The org made the volunteer a favorite: its cards get the favorite boost. */
   favorite: boolean;
+  /** The project's running campaign, with the languages still to launch (campaigns.ts). */
+  campaign: { row: CampaignRow; open: Set<string> } | null;
 }
 
 /** Projects a session draws from: every project in the user's orgs, plus public, approved projects anywhere that openPoolRole lets them into. */
-function sources(db: DB, user: UserRow, nonprofitsOnly: boolean): Source[] {
+export function sources(db: DB, user: UserRow, nonprofitsOnly: boolean): Source[] {
   const roles = new Map(all<{ org_id: number; role: Role }>(db, 'SELECT org_id, role FROM memberships WHERE user_id = ?', user.id).map((m) => [m.org_id, m.role]));
   // The visibility/moderation test here only narrows the scan; openPoolRole decides who gets in.
   const projects = all<ProjectRow>(
@@ -71,9 +76,22 @@ function sources(db: DB, user: UserRow, nonprofitsOnly: boolean): Source[] {
     const org = orgs.get(project.org_id)!;
     if (nonprofitsOnly && !passesNonprofitsOnly(org)) continue;
     // The user as they act in this project's org: their role decides what they may review.
-    out.push({ project, org, member: { ...user, orgId: project.org_id, role }, favorite: favorites.has(org.id) });
+    const c = activeCampaign(db, project.id);
+    const campaign = c ? { row: c, open: new Set(campaignLocales(db, c.id).filter((l) => !l.launched_at).map((l) => l.locale)) } : null;
+    out.push({ project, org, member: { ...user, orgId: project.org_id, role }, favorite: favorites.has(org.id), campaign });
   }
   return out;
+}
+
+/** The deadline boost for a language the project's campaign hasn't launched yet. */
+const campaignBoostFor = (s: Source, locale: string, now: number) => (s.campaign?.open.has(locale) ? deadlineBoost(s.campaign.row.deadline, now) : 0);
+
+/** The card's campaign line: "Get Pantry hours live · 46% · 2 days left". */
+function campaignLine(db: DB, s: Source, locale: string, now: number) {
+  if (!s.campaign?.open.has(locale)) return null;
+  const v = campaignView(db, s.campaign.row, now);
+  const l = v.locales.find((x) => x.locale === locale)!;
+  return { name: v.name, daysLeft: v.daysLeft, approved: l.approved, total: l.total };
 }
 
 const cardOrg = (org: OrgRow, favorite: boolean): CardOrg => ({ id: org.id, name: org.name, type: org.type, verified: isVerifiedNonprofit(org), description: org.description, favorite });
@@ -116,7 +134,7 @@ function candidates(db: DB, s: Source, locale: string, type: WorkCard['type'], l
   );
   return rows.map((r) => ({
     s, type, locale, keyId: r.id, urgent: !!r.urgent, shot: r.shot,
-    score: score({ waitedHours: hoursSince(r.since, now), urgent: !!r.urgent, priority: s.project.priority, verifiedNonprofit: isVerifiedNonprofit(s.org), favorite: s.favorite }),
+    score: score({ waitedHours: hoursSince(r.since, now), urgent: !!r.urgent, priority: s.project.priority, verifiedNonprofit: isVerifiedNonprofit(s.org), favorite: s.favorite, campaignBoost: campaignBoostFor(s, locale, now) }),
   }));
 }
 
@@ -160,7 +178,7 @@ export function buildSession(
           add(
             rows.map((r) => ({
               s, type, locale, keyId: r.key_id, urgent: !!r.urgent, shot: r.shot,
-              score: score({ waitedHours: hoursSince(r.since, now), urgent: !!r.urgent, priority: s.project.priority, verifiedNonprofit: isVerifiedNonprofit(s.org), favorite: s.favorite }),
+              score: score({ waitedHours: hoursSince(r.since, now), urgent: !!r.urgent, priority: s.project.priority, verifiedNonprofit: isVerifiedNonprofit(s.org), favorite: s.favorite, campaignBoost: campaignBoostFor(s, locale, now) }),
             })),
           );
         }
@@ -202,7 +220,7 @@ export function buildSession(
   const rand = opts.rand ?? Math.random;
   const cards: Card[] = picked.map(({ s, type, locale, keyId, urgent }): Card => {
     const { project, org, member } = s;
-    const base = { id: `${type}:${keyId}:${locale}`, project: projectJson(project), org: cardOrg(org, s.favorite), locale, urgent };
+    const base = { id: `${type}:${keyId}:${locale}`, project: projectJson(project), org: cardOrg(org, s.favorite), locale, urgent, campaign: campaignLine(db, s, locale, now) };
     if (type === 'pick') return { ...base, type, pick: pickCard(db, keyId, locale, member, rand)! };
     if (type === 'final') return { ...base, type, final: finalCard(db, keyId, locale) };
     const [item] = queue(db, project, locale, type, { viewer: member, keyId }).items;
@@ -221,6 +239,7 @@ export function buildSession(
         org: cardOrg(spot.source.org, spot.source.favorite),
         locale: spot.locale,
         urgent: false,
+        campaign: null,
         spot: { checkId: spot.checkId, source: spot.sourceText, shown: spot.shown },
       });
     }

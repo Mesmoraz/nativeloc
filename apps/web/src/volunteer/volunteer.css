@@ -207,3 +207,12 @@ a.v-btn { display: inline-flex; align-items: center; text-decoration: none; colo
 .v-message { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .v-message > span:first-child { font-size: 1.2rem; line-height: 1.2; }
 .v-final-reason textarea { width: 100%; }
+
+/* Campaigns and leaderboards (segment-3e-campaigns-leaderboards.md) */
+.v-campaigns { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.v-campaign { display: flex; flex-direction: column; gap: 4px; }
+.v-campaign-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.v-card-campaign { color: var(--accent); font-weight: 600; margin-top: -4px; }
+.v-board { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); display: flex; flex-direction: column; gap: 6px; }
+.v-board ol { margin: 0; padding-left: 22px; }
+.v-board li.you { font-weight: 700; color: var(--accent); }

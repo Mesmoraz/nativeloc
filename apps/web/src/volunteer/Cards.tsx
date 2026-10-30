@@ -38,13 +38,21 @@ function useSubmitKey(action: () => void) {
 }
 
 function CardHead({ card, kind }: { card: Card; kind: string }) {
+  const c = card.campaign;
   return (
-    <div className="v-card-head">
-      <span className={`v-kind ${card.type}`}>{kind}</span>
-      <span className="v-where">
-        {card.project.name} · {nativeLanguageName(card.locale)}
-      </span>
-    </div>
+    <>
+      <div className="v-card-head">
+        <span className={`v-kind ${card.type}`}>{kind}</span>
+        <span className="v-where">
+          {card.project.name} · {nativeLanguageName(card.locale)}
+        </span>
+      </div>
+      {c && (
+        <div className="v-card-campaign small">
+          🏁 {c.name} · {c.total ? Math.round((c.approved / c.total) * 100) : 0}% · {c.daysLeft === 0 ? 'last day' : c.daysLeft === 1 ? '1 day left' : `${c.daysLeft} days left`}
+        </div>
+      )}
+    </>
   );
 }
 
